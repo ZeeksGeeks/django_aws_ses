@@ -1,0 +1,14 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>{% block title1 %}N/A {% endblock title1 %} | {% block title2 %} {{ site.domain }}{% endblock title2 %}</title>
+    </head>
+    <body>
+    	<div id="body_contaner" class=" cardContenet">
+			{% block content %}
+			if you see this, something is wrong!
+			{% endblock content %} 
+		</div>
+	</body>
+</html>
