@@ -17,7 +17,6 @@ User = get_user_model()
 
 from . import settings
 from . import signals
-from . import utils
 from .models import (
     BounceRecord,
     ComplaintRecord

@@ -60,7 +60,7 @@ def update_awsses_user(sender, instance, created, **kwargs):
     if created:
         AwsSesUserAddon.objects.create(user=instance)
     try:
-        instance.AwsSesUserAddon.save()
+        instance.aws_ses.save()
     except AwsSesUserAddon.DoesNotExist:
         AwsSesUserAddon.objects.create(user=instance)
 
@@ -86,7 +86,7 @@ class BounceRecord(models.Model):
     reporting_mta = models.CharField(max_length=255, blank=True, null=True,)
     status = models.CharField(max_length=255, blank=True, null=True,)
     action = models.CharField(max_length=255, blank=True, null=True,)
-    feedback_id = models.CharField(max_length=255, blank=True, null=True,)
+    feedback_id = models.TextField(max_length=255, blank=True, null=True,)
     diagnostic_code = models.CharField(max_length=255, blank=True, null=True,)
     cleared = models.BooleanField(default=False)
     
@@ -97,7 +97,7 @@ class ComplaintRecord(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     email = models.EmailField()
     sub_type = models.CharField(max_length=255, blank=True, null=True,)
-    feedback_id = models.CharField(max_length=255, blank=True, null=True,)
+    feedback_id = models.TextField(max_length=255, blank=True, null=True,)
     feedback_type = models.CharField(max_length=255, blank=True, null=True,)
      
     def __str__(self):
@@ -116,8 +116,8 @@ class SendRecord(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     source = models.EmailField()
     destination = models.EmailField()
-    subject = models.CharField(max_length=255, blank=True, null=True,)
-    message_id = models.CharField(max_length=255, blank=True, null=True,)
+    subject = models.TextField(max_length=255, blank=True, null=True,)
+    message_id = models.TextField(max_length=255, blank=True, null=True,)
     aws_process_time = models.IntegerField()
     smtp_response = models.CharField(max_length=255, blank=True, null=True,)
     status = models.CharField(max_length=255, blank=True, null=True,)

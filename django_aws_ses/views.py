@@ -365,8 +365,8 @@ def handle_bounce(request):
                     except Exception as e:
                         logger.info("error well trying to get_or_create record: %s" % e)
                 logger.info(
-                    u'Received delivery notification: messageId: %s, feedbackType: %s',
-                    message_id, feedback_type,
+                    u'Received delivery notification: messageId: %s',
+                    message_id,
                     extra={
                         'notification': notification,
                     },
@@ -375,7 +375,7 @@ def handle_bounce(request):
                 signals.delivery_received.send(
                     sender=handle_bounce,
                     mail_obj=mail_obj,
-                    delivery_obj=delivery_obj,
+                    delivery_obj=send_obj,
                     raw_message=raw_json,
                 )
                 

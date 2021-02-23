@@ -11,7 +11,7 @@ from .models import (
 
 from . import settings
 
-logger = settings.logger
+#logger = settings.logger
 
 class AwsSesSettingsAdmin(admin.ModelAdmin):
     model = AwsSesSettings
@@ -44,7 +44,7 @@ admin.site.register(SESStat, SESStatAdmin)
 
 class AdminEmailListFilter(admin.SimpleListFilter):
     def queryset(self, request, queryset):
-        logger.info('self.value(): %s' % self.value())
+        #logger.info('self.value(): %s' % self.value())
         return queryset.filter(email__contains=self.value())
                                
 class BounceRecordAdmin(admin.ModelAdmin):

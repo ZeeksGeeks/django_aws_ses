@@ -8,6 +8,7 @@ from django.dispatch import Signal
 
 from datetime import datetime, timedelta
 from time import sleep
+import sys
 
 from . import settings
 from . import signals
@@ -91,6 +92,23 @@ class SESBackend(BaseEmailBackend):
         """Sends one or more EmailMessage objects and returns the number of
         email messages sent.
         """
+        
+        
+        calling_func = ''
+        try:
+            fcount = 0
+            while sys._getframe(fcount).f_code.co_name in ['send_messages', 'send', 'mail_admins', 'send_mail', 'emit', 'handle']:
+                fcount +=1
+                
+            calling_func = sys._getframe(fcount).f_code.co_name
+            
+        except Exception as e:
+            logger.info("fcount:%s, called from exception = %s" , (fcount, e))
+        
+        logger.info("called from %s" , (calling_func))
+        
+        
+        
         logger.info("send_messages")
         if not email_messages:
             return
@@ -188,6 +206,15 @@ class SESBackend(BaseEmailBackend):
 
             try:
                 logger.info("Try to send raw email")
+                #logger.info('message.message().as_string() = %s' % message.message().as_string())
+                logger.info("source = %s" % source)
+                logger.info("message.from_email = %s" % self.dkim_key)
+                logger.info("message.recipients() = %s" % message.recipients())
+                
+                logger.info("dkim_key = %s" % self.dkim_key)
+                logger.info("dkim_domain = %s" % self.dkim_domain)
+                logger.info("dkim_selector = %s" % self.dkim_selector)
+                logger.info("dkim_headers = %s" % str(self.dkim_headers))
                 response = self.connection.send_raw_email(
                     Source=source or message.from_email,
                     Destinations=message.recipients(),
