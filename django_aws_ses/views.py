@@ -249,6 +249,13 @@ def handle_bounce(request):
                 bounce_type = bounce_obj.get('bounceType')
                 bounce_subtype = bounce_obj.get('bounceSubType')
                 bounce_recipients = bounce_obj.get('bouncedRecipients', [])
+                logger.info(
+                    u'Received bounce notification: feedbackId: %s, bounceType: %s, bounceSubType: %s',
+                    feedback_id, bounce_type, bounce_subtype,
+                    extra={
+                        'notification': notification,
+                    },
+                )
                 
                 # create a BounceRecord so we can keep from sending to bad emails.
                 logger.info('create records')
@@ -265,13 +272,6 @@ def handle_bounce(request):
                         reporting_mta = bounce_obj.get('reportingMTA', None),
                     )
                 
-                logger.info(
-                    u'Received bounce notification: feedbackId: %s, bounceType: %s, bounceSubType: %s',
-                    feedback_id, bounce_type, bounce_subtype,
-                    extra={
-                        'notification': notification,
-                    },
-                )
 
                 signals.bounce_received.send(
                     sender=handle_bounce,

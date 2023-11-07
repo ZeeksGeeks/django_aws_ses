@@ -6,7 +6,8 @@ from .models import (
     AwsSesUserAddon,
     ComplaintRecord,
     SendRecord,
-    UnknownRecord
+    UnknownRecord,
+    BlackListedDomains,
     )
 
 from . import settings
@@ -62,15 +63,22 @@ class ComplaintRecordAdmin(admin.ModelAdmin):
 admin.site.register(ComplaintRecord, ComplaintRecordAdmin)
 
 class SendRecordAdmin(admin.ModelAdmin):
-    model = ComplaintRecord
+    model = SendRecord
     list_display = ('source', 'destination', 'subject', 'timestamp', 'status')
     list_filter = ('source', 'destination', 'subject', 'timestamp', 'status')
 
 admin.site.register(SendRecord, SendRecordAdmin)
 
 class UnknownRecordAdmin(admin.ModelAdmin):
-    model = ComplaintRecord
+    model = UnknownRecord
     list_display = ('event_type', 'aws_data')
     list_filter = ('event_type', 'aws_data')
 
 admin.site.register(UnknownRecord, UnknownRecordAdmin)
+
+class BlackListedDomainsAdmin(admin.ModelAdmin):
+    model = BlackListedDomains
+    list_display = ('domain', 'timestamp')
+    list_filter = ('domain', 'timestamp')
+
+admin.site.register(BlackListedDomains, BlackListedDomainsAdmin)

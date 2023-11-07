@@ -13,7 +13,8 @@ import sys
 from . import settings
 from . import signals
 from . import utils
-from .models import BounceRecord 
+from .models import BounceRecord
+from saleor.core.utils import email_exclusion_filter
 
 logger = settings.logger
 
@@ -82,6 +83,8 @@ class SESBackend(BaseEmailBackend):
         except Exception:
             if not self.fail_silently:
                 raise
+        
+        return True
 
     def close(self):
         """Close any open HTTP connections to the API server.
@@ -90,10 +93,13 @@ class SESBackend(BaseEmailBackend):
 
     def send_messages(self, email_messages):
         """Sends one or more EmailMessage objects and returns the number of
-        email messages sent.
+        email messages sent and a list of filtered emails.
         """
-        
-        
+        logger.info("1 --- start of send_messages")
+        list_of_response = []
+        num_sent = 0
+        not_sent_list = []
+        sent_message = {"Sent":""}
         calling_func = ''
         try:
             fcount = 0
@@ -103,22 +109,31 @@ class SESBackend(BaseEmailBackend):
             calling_func = sys._getframe(fcount).f_code.co_name
             
         except Exception as e:
-            logger.info("fcount:%s, called from exception = %s" , (fcount, e))
+            logger.info("fcount:%s, called from exception = %s" % (fcount, e))
         
-        logger.info("called from %s" , (calling_func))
+        logger.info("called from %s current throttle:%s" % (calling_func, self._throttle))
         
         
         
         logger.info("send_messages")
         if not email_messages:
-            return
+            logger.info("no email messages returning")
+            list_of_response.append({'error':'no email messages returning'})
 
         new_conn_created = self.open()
+        if new_conn_created:
+            logger.info("created a new connection")
+        
         if not self.connection:
             # Failed silently
-            return
+            logger.info("no connection returning")
+            list_of_response.append({'error':'no connection returning'})
+            logger.info("DEBUGING EMAILS --- list_of_response:%s" % (list_of_response))
+            logger.info("DEBUGING EMAILS --- return %s" % (num_sent))
+            return num_sent
 
-        num_sent = 0
+        
+        
         source = settings.AWS_SES_RETURN_PATH
         
         logger.info("email_messages: %s" % email_messages)
@@ -131,16 +146,43 @@ class SESBackend(BaseEmailBackend):
             # If settings.AWS_SES_CONFIGURATION_SET is a callable, pass it the
             # message object and dkim settings and expect it to return a string
             # containing the SES Configuration Set name.
+            message.aws_ses_response = {'error':'not sent yet'}
+            
             logger.info("Sending signal(email_pre_send)")
-            signals.email_pre_send.send_robust(self.__class__, message=message) 
+            logger.info("message to: %s, cc: %s, bcc: %s" % (message.to, message.cc, message.bcc))
+            signals.email_pre_send.send_robust(self.__class__, message=message)
+            
+            # for log in dir(message):
+            #     logger.info(log)
+            pre_filter_recipients = message.recipients()
+            logger.info("message.recipients() = %s" % message.recipients())
+            
+            marketing = message.extra_headers.get("marketing","False")
+            message.to = email_exclusion_filter(message.to,marketing)
+            message.cc = email_exclusion_filter(message.cc,marketing)
+            message.bcc = email_exclusion_filter(message.bcc,marketing)
 
-            message.to = utils.filter_recipiants(message.recipients())
+            message.to = utils.filter_recipiants(message.to)
+            message.cc = utils.filter_recipiants(message.cc)
+            message.bcc = utils.filter_recipiants(message.bcc)
             
             logger.info("message.recipients() after email_pre_send: %s" % message.recipients())
             
+            
+
+                    
             if not message.recipients():
                 logger.info("no recipients left after the filter")
-                return False
+                list_of_response.append({'error':'no recipients left after the filter'})
+                message.aws_ses_response = {'error':'no recipients left after the filter'}
+                sent_message = {"Not Sent":"No recipients left after filters"}
+                continue
+                
+                #raise Exception('No emails left after filters!')
+            else:
+                for email in pre_filter_recipients:
+                    if email not in message.recipients():
+                        not_sent_list.append(email)            
             
             if (settings.AWS_SES_CONFIGURATION_SET
                     and 'X-SES-CONFIGURATION-SET' not in message.extra_headers):
@@ -164,13 +206,16 @@ class SESBackend(BaseEmailBackend):
             # Set the setting to 0 or None to disable throttling.
             if self._throttle:
                 global recent_send_times
+                logger.info("inside if _throttle recent_send_times:%s" % recent_send_times)
 
                 now = datetime.now()
+                logger.info("inside if _throttle now:%s" % now)
 
                 # Get and cache the current SES max-per-second rate limit
                 # returned by the SES API.
+                logger.info("inside if _throttle calling get_rate_limit")
                 rate_limit = self.get_rate_limit()
-                logger.debug(u"send_messages.throttle rate_limit='{}'".format(rate_limit))
+                logger.info("send_messages.throttle rate_limit='{}'".format(rate_limit))
 
                 # Prune from recent_send_times anything more than a few seconds
                 # ago. Even though SES reports a maximum per-second, the way
@@ -208,7 +253,7 @@ class SESBackend(BaseEmailBackend):
                 logger.info("Try to send raw email")
                 #logger.info('message.message().as_string() = %s' % message.message().as_string())
                 logger.info("source = %s" % source)
-                logger.info("message.from_email = %s" % self.dkim_key)
+                logger.info("message.from_email = %s" % message.from_email)
                 logger.info("message.recipients() = %s" % message.recipients())
                 
                 logger.info("dkim_key = %s" % self.dkim_key)
@@ -221,16 +266,21 @@ class SESBackend(BaseEmailBackend):
                     # todo attachments?
                     RawMessage={'Data': dkim_sign(message.message().as_string(),
                                                   dkim_key=self.dkim_key,
-                                                  dkim_domain=self.dkim_domain,
+                   dkim_domain=self.dkim_domain,
                                                   dkim_selector=self.dkim_selector,
                                                   dkim_headers=self.dkim_headers)}
                 )
+                
+                list_of_response.append(response)
+                
+                message.aws_ses_response = response
+                
                 message.extra_headers['status'] = 200
                 message.extra_headers['message_id'] = response['MessageId']
                 message.extra_headers['request_id'] = response['ResponseMetadata']['RequestId']
                 num_sent += 1
                 if 'X-SES-CONFIGURATION-SET' in message.extra_headers:
-                    logger.debug(
+                    logger.info(
                         u"send_messages.sent from='{}' recipients='{}' message_id='{}' request_id='{}' "
                         u"ses-configuration-set='{}'".format(
                             message.from_email,
@@ -240,7 +290,7 @@ class SESBackend(BaseEmailBackend):
                             message.extra_headers['X-SES-CONFIGURATION-SET']
                         ))
                 else:
-                    logger.debug(u"send_messages.sent from='{}' recipients='{}' message_id='{}' request_id='{}'".format(
+                    logger.info(u"send_messages.sent from='{}' recipients='{}' message_id='{}' request_id='{}'".format(
                         message.from_email,
                         ", ".join(message.recipients()),
                         message.extra_headers['message_id'],
@@ -255,22 +305,35 @@ class SESBackend(BaseEmailBackend):
                     message.extra_headers[key] = getattr(err, key, None)
                 if not self.fail_silently:
                     raise
-
+        if not_sent_list:
+            sent_message.update({"Sent":"%s" % not_sent_list})
+            
+        logger.info("new_conn_created: %s" % new_conn_created)
         if new_conn_created:
+            logger.info("closing new connection after send")
             self.close()
-
-        return num_sent
+        
+        logger.info("DEBUGING EMAILS --- list_of_response:%s" % (list_of_response))
+        logger.info("DEBUGING EMAILS --- return %s, %s" % (num_sent, sent_message))
+        
+        
+        return num_sent, sent_message
 
     def get_rate_limit(self):
+        logger.info("getting rate limit")
         if self._access_key_id in cached_rate_limits:
+            logger.info("returning cached rate limit %s" % cached_rate_limits[self._access_key_id])
             return cached_rate_limits[self._access_key_id]
 
+        logger.info("creating AWS connection")
         new_conn_created = self.open()
         if not self.connection:
+            logger.info("AWS connection creation failed")
             raise Exception(
                 "No connection is available to check current SES rate limit.")
         try:
             quota_dict = self.connection.get_send_quota()
+            logger.info("AWS quota dict %s" % quota_dict)
             max_per_second = quota_dict['MaxSendRate']
             ret = float(max_per_second)
             cached_rate_limits[self._access_key_id] = ret
@@ -278,3 +341,5 @@ class SESBackend(BaseEmailBackend):
         finally:
             if new_conn_created:
                 self.close()
+                
+                

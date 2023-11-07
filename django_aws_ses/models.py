@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import traceback
 
 from django.conf import settings
 from django.db import models
@@ -25,9 +26,15 @@ class AwsSesSettings(models.Model):
     
 @receiver(post_save, sender=Site)
 def update_awsses_settings(sender, instance, created, **kwargs):
-    if created:
-        AwsSesSettings.objects.create(Site=instance)
-    instance.AwsSesSettings.save()    
+    try:
+        if created:
+            AwsSesSettings.objects.create(site=instance)
+        instance.awssessettings.save()
+    except Exception as e:
+        print("Exception saving site error:%s" % e)    
+        track = traceback.format_exc()
+        print("Exception saving site track: %s" % (track))    
+        
     
 class AwsSesUserAddon(models.Model):
     user = models.OneToOneField(User, related_name='aws_ses', on_delete=models.CASCADE)
@@ -87,8 +94,11 @@ class BounceRecord(models.Model):
     status = models.CharField(max_length=255, blank=True, null=True,)
     action = models.CharField(max_length=255, blank=True, null=True,)
     feedback_id = models.TextField(max_length=255, blank=True, null=True,)
-    diagnostic_code = models.CharField(max_length=255, blank=True, null=True,)
+    diagnostic_code = models.CharField(max_length=2048, blank=True, null=True,)
     cleared = models.BooleanField(default=False)
+    
+    class Meta:
+        indexes = [models.Index(fields=["email"]),]
     
     def __str__(self):
         return "email: %s, type: %s, sub_type: %s, status: %s, date: %s" % (self.email, self.bounce_type, self.bounce_sub_type, self.status, self.timestamp)
@@ -104,7 +114,6 @@ class ComplaintRecord(models.Model):
         return "email: %s, sub_type: %s, feedback_type: %s, date: %s" % (self.email, self.bounce_sub_type, self.feedback_type, self.timestamp)
 
 class SendRecord(models.Model):
-    
 
     SEND = 'Send'
     DELIVERED = 'Delivery'
@@ -121,6 +130,9 @@ class SendRecord(models.Model):
     aws_process_time = models.IntegerField()
     smtp_response = models.CharField(max_length=255, blank=True, null=True,)
     status = models.CharField(max_length=255, blank=True, null=True,)
+    
+    class Meta:
+        indexes = [models.Index(fields=["destination"]),]
      
     def __str__(self):
         return "source: %s, destination: %s, subject: %s, date: %s" % (self.source, self.destination, self.subject, self.timestamp)
@@ -134,3 +146,9 @@ class UnknownRecord(models.Model):
     def __str__(self):
         return "eventType: %s, timestamp: %s" % (self.eventType, self.timestamp)
      
+class BlackListedDomains(models.Model):
+    domain = models.CharField(max_length=255, unique=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return "%s, blocked: %s" % (self.domain, self.timestamp)

@@ -1,5 +1,9 @@
 import base64
 import logging
+import time
+import re
+import dns.resolver
+from telnetlib import Telnet
 from builtins import str as text
 from builtins import bytes
 from io import StringIO
@@ -19,7 +23,9 @@ from . import settings
 from . import signals
 from .models import (
     BounceRecord,
-    ComplaintRecord
+    ComplaintRecord,
+    BlackListedDomains,
+    SendRecord,
     ) 
 
 logger = settings.logger
@@ -211,30 +217,40 @@ def verify_bounce_message(msg):
 
 @receiver(signals.email_pre_send)
 def receiver_email_pre_send(sender, message=None, **kwargs):
-    logger.info("receiver_email_pre_send received signal")
+    #logger.info("receiver_email_pre_send received signal")
+    pass
 
 def filter_recipiants(recipiant_list):
+    logger.info("Starting filter_recipiants: %s" % recipiant_list)
+    
+    if type(recipiant_list) != type([]):
+        logger.info("putting emails into a list")
+        recipiant_list = [recipiant_list]
     
     if len(recipiant_list) > 0:
-        recipiant_list = filter_recipiants_with_unsubscribe(recipiant_list)
-        
+        recipiant_list = filter_recipiants_with_unsubscribe(recipiant_list)     
+            
     if len(recipiant_list) > 0:
         recipiant_list = filter_recipiants_with_complaint_records(recipiant_list)
-        
+            
     if len(recipiant_list) > 0:
         recipiant_list = filter_recipiants_with_bounce_records(recipiant_list)
-    
+        
+    if len(recipiant_list) > 0:
+        recipiant_list = filter_recipiants_with_validater_email_domain(recipiant_list)
+
+    logger.info("recipiant list after filter_recipiants: %s" % recipiant_list)
     return recipiant_list
 
 def filter_recipiants_with_unsubscribe(recipiant_list):
     """
     filter message recipiants so we don't send emails to any email that have Unsubscribude
     """
-    logger.info("unsubscribe filter running")
+    #logger.info("unsubscribe filter running")
     
-    logger.info("message.recipients() befor blacklist_emails filter: %s" % recipiant_list)
+    #logger.info("message.recipients() befor blacklist_emails filter: %s" % recipiant_list)
     blacklist_emails = list(set([record.email for record in User.objects.filter(aws_ses__unsubscribe=True)]))       
-    
+
     if blacklist_emails:
         return filter_recipiants_with_blacklist(recipiant_list, blacklist_emails)
     else:
@@ -244,9 +260,9 @@ def filter_recipiants_with_complaint_records(recipiant_list):
     """
     filter message recipiants so we don't send emails to any email that have a ComplaintRecord
     """
-    logger.info("complaint_records filter running")
+    #logger.info("complaint_records filter running")
     
-    logger.info("message.recipients() befor blacklist_emails filter: %s" % recipiant_list)
+    #logger.info("message.recipients() befor blacklist_emails filter: %s" % recipiant_list)
     blacklist_emails = list(set([record.email for record in ComplaintRecord.objects.filter(email__isnull=False)]))       
     
     if blacklist_emails:
@@ -259,21 +275,87 @@ def filter_recipiants_with_bounce_records(recipiant_list):
     filter message recipiants so we dont send emails to any email that has more BounceRecord
     the SES_BOUNCE_LIMIT
     """
-    logger.info("bounce_records filter running")
+    #logger.info("bounce_records filter running")
     
-    logger.info("message.recipients() befor blacklist_emails filter: %s" % recipiant_list)
-    blacklist_emails = list(set([record.email for record in BounceRecord.objects.filter(email__isnull=False).annotate(total=Count('email')).filter(total__gte=settings.SES_BOUNCE_LIMIT)]))       
+    #logger.info("message.recipients() befor blacklist_emails filter: %s" % recipiant_list)
+    
+    blacklist_emails = list(set([record.email for record in BounceRecord.objects.filter(email__isnull=False).annotate(total=Count('email')).filter(total__gte=settings.SES_BOUNCE_LIMIT)]))
+    
     if blacklist_emails:
         return filter_recipiants_with_blacklist(recipiant_list, blacklist_emails)
     else:
         return recipiant_list
+    
 def filter_recipiants_with_blacklist(recipiant_list, blacklist_emails):
     """
-    filter message recipiants with a list of email you dont want to email
+    filter message recipiants with a list of emails you dont want to email
     """
-    logger.info("blacklist_emails filter list: %s" % blacklist_emails)
-    filtered_recipiant_list = [email for email in recipiant_list if email not in blacklist_emails]
+    filtered_recipiant_list = [email for email in recipiant_list if email not in blacklist_emails] 
     
-    logger.info("filtered_recipiant_list: %s" % filtered_recipiant_list)
     return filtered_recipiant_list
 
+def filter_recipiants_with_validater_email_domain(recipiant_list):
+    debug_flag = True
+    
+    sent_list = [e.destination for e in SendRecord.objects.filter(destination__in=recipiant_list).distinct("destination")]
+    
+    test_list = [e for e in recipiant_list if e not in sent_list]
+
+    for e in test_list:
+
+        if not validater_email_domain(e):
+           recipiant_list.remove(e)
+             
+    return recipiant_list
+
+def validater_email_domain(email):
+    
+    if email.find("@") < 1:
+        
+        return False
+    domain = email.split("@")[-1]
+    
+    if BlackListedDomains.objects.filter(domain=domain).count() > 0:
+        return False
+    
+    records = []
+    try:
+        records = dns.resolver.query(domain, 'MX')
+    except dns.resolver.NoNameservers as e:
+        return False
+    
+    except dns.resolver.NoAnswer as e:
+        return False
+    
+    except dns.resolver.NXDOMAIN as e:
+        return False
+    
+    except dns.resolver.LifetimeTimeout as e:
+        return False
+    
+    if len(records) < 1:
+        return False
+    
+    return True
+
+def emailIsValid(email):
+
+    resp = False
+    regex = re.compile(r'([A-Za-z0-9]+[.\-_])*[A-Za-z0-9]+@[A-Za-z0-9-]+(.[A-Z|a-z]{2,})+')
+    if re.fullmatch(regex, email):
+        resp =  True
+
+    return resp
+
+def validate_email(email):
+
+    if not emailIsValid(email):
+        return False
+    
+    if BounceRecord.objects.filter(email=email).count() >= settings.SES_BOUNCE_LIMIT:
+        return False
+    
+    if ComplaintRecord.objects.filter(email=email).count() > 0:
+        return False
+    
+    return validater_email_domain(email)
