@@ -53,7 +53,7 @@ HOME_URL = getattr(settings, 'HOME_URL', '')
 if not BASE_DIR:
     raise RuntimeError('No BASE_DIR defined in project settings, django_aws_ses requires BASE_DIR to be defined and pointed at your root directory. i.e. BASE_DIR = os.path.dirname(os.path.abspath(__file__))')
 
-UNSUBSCRIBE_TEMPLET = getattr(settings, 'UNSUBSCRIBE_TEMPLET', 'django_aws_ses/unsebscribe.html')
+UNSUBSCRIBE_TEMPLET = getattr(settings, 'UNSUBSCRIBE_TEMPLET', 'django_aws_ses/unsubscribe.html')
 BASE_TEMPLET = getattr(settings, 'UNSUBSCRIBE_TEMPLET', 'django_aws_ses/base.html')
    
 AWS_SES_REGION_ENDPOINT_URL = getattr(settings, 'AWS_SES_REGION_ENDPOINT_URL','https://' + AWS_SES_REGION_ENDPOINT)

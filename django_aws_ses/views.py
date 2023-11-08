@@ -20,7 +20,7 @@ from django.core.exceptions import PermissionDenied
 from django.shortcuts import render, redirect
 from django.contrib.auth import get_user_model
 from django.views.generic.base import TemplateView
-from django.utils.encoding import force_bytes, force_text
+from django.utils.encoding import force_bytes, force_str
 
 from . import settings
 from . import signals
@@ -432,7 +432,7 @@ class HandleUnsubscribe(TemplateView):
         logger.info("in get ----- self.base_template_name: %s" % self.base_template_name)
         
         try:
-            uuid = force_text(urlsafe_base64_decode(uuid).decode())
+            uuid = force_str(urlsafe_base64_decode(uuid).decode())
             logger.info('uuid: %s' % uuid)
             user = User.objects.get(pk=uuid)
             logger.info('user.pk: %s' % user.pk)

@@ -14,7 +14,6 @@ from . import settings
 from . import signals
 from . import utils
 from .models import BounceRecord
-from saleor.core.utils import email_exclusion_filter
 
 logger = settings.logger
 
@@ -158,9 +157,6 @@ class SESBackend(BaseEmailBackend):
             logger.info("message.recipients() = %s" % message.recipients())
             
             marketing = message.extra_headers.get("marketing","False")
-            message.to = email_exclusion_filter(message.to,marketing)
-            message.cc = email_exclusion_filter(message.cc,marketing)
-            message.bcc = email_exclusion_filter(message.bcc,marketing)
 
             message.to = utils.filter_recipiants(message.to)
             message.cc = utils.filter_recipiants(message.cc)

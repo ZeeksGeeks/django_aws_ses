@@ -111,7 +111,7 @@ class BounceMessageVerifier(object):
                 )
 
             try:
-                import M2Crypto
+                from M2Crypto import X509
             except ImportError:
                 raise ImproperlyConfigured(
                     "`M2Crypto` is required for bounce message verification. "
@@ -132,8 +132,8 @@ class BounceMessageVerifier(object):
             # If the certificate is invalid then return
             # false as we couldn't verify the message.
             try:
-                self._certificate = M2Crypto.X509.load_cert_string(response.content)
-            except M2Crypto.X509.X509Error as e:
+                self._certificate = X509.load_cert_string(response.content)
+            except X509.X509Error as e:
                 logger.warning(u'Could not load certificate from %s: "%s"', cert_url, e)
                 self._certificate = None
 
