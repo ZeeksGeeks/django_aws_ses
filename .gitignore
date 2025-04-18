@@ -1,0 +1,16 @@
+# environment directory
+.venv/
+.pydevproject
+env/
+/.project
+/logs
+/media
+/static
+__pycache__
+/*/migrations
+*.code-workspace
+.env/
+.vscode/
+memory-bank/
+.cursor/rules/
+run/celery/
