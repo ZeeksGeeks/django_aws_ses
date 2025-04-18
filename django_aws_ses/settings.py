@@ -1,106 +1,153 @@
+import logging
+import os
 from django.conf import settings
 from django.contrib.sites.models import Site
-import logging
+from django.core.exceptions import ImproperlyConfigured
 
-from .models import (
-    AwsSesSettings
+from .models import AwsSesSettings
+
+# Define constants for default values
+DEFAULTS = {
+    'AWS_SES_REGION_NAME': 'us-east-1',
+    'AWS_SES_REGION_ENDPOINT': 'email.us-east-1.amazonaws.com',
+    'AWS_SES_AUTO_THROTTLE': 0.5,
+    'AWS_SES_RETURN_PATH': None,
+    'AWS_SES_CONFIGURATION_SET': None,
+    'DKIM_SELECTOR': 'ses',
+    'DKIM_HEADERS': ('From', 'To', 'Cc', 'Subject'),
+    'VERIFY_BOUNCE_SIGNATURES': True,
+    'BOUNCE_CERT_DOMAINS': ('amazonaws.com', 'amazon.com'),
+    'SES_BOUNCE_LIMIT': 1,
+    'SES_BACKEND_DEBUG': False,
+    'SES_BACKEND_DEBUG_LOGFILE_FORMATTER': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    'DEFAULT_FROM_EMAIL': 'no_reply@example.com',
+    'UNSUBSCRIBE_TEMPLATE': 'django_aws_ses/unsubscribe.html',
+    'BASE_TEMPLATE': 'django_aws_ses/base.html',
+}
+
+# Selectively export key settings
+__all__ = (
+    'ACCESS_KEY', 'SECRET_KEY', 'AWS_SES_REGION_NAME', 'AWS_SES_REGION_ENDPOINT',
+    'AWS_SES_AUTO_THROTTLE', 'AWS_SES_RETURN_PATH', 'AWS_SES_CONFIGURATION_SET',
+    'DKIM_DOMAIN', 'DKIM_PRIVATE_KEY', 'DKIM_SELECTOR', 'DKIM_HEADERS',
+    'TIME_ZONE', 'BASE_DIR', 'SES_BOUNCE_LIMIT', 'SES_BACKEND_DEBUG',
+    'SES_BACKEND_DEBUG_LOGFILE_PATH', 'SES_BACKEND_DEBUG_LOGFILE_FORMATTER',
+    'DEFAULT_FROM_EMAIL', 'HOME_URL', 'UNSUBSCRIBE_TEMPLATE', 'BASE_TEMPLATE',
+    'VERIFY_BOUNCE_SIGNATURES', 'BOUNCE_CERT_DOMAINS', 'logger',
+)
+
+def get_aws_ses_settings():
+    """
+    Retrieve AwsSesSettings from the database for the current site.
+    Returns None if the settings cannot be retrieved.
+    """
+    try:
+        return AwsSesSettings.objects.get(site_id=settings.SITE_ID)
+    except (AwsSesSettings.DoesNotExist, AttributeError) as e:
+        logger.warning("Failed to retrieve AwsSesSettings: %s", e)
+        return None
+
+def configure_logger(debug, log_file_path, formatter):
+    """
+    Configure the logger for the AWS SES app.
+    Sets up file logging if debug is enabled and a valid log file path is provided.
+    """
+    logger = logging.getLogger('django_aws_ses')
+    logger.setLevel(logging.DEBUG if debug else logging.WARNING)
+
+    if debug and log_file_path:
+        # Validate log file path
+        log_dir = os.path.dirname(log_file_path)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        try:
+            handler = logging.FileHandler(log_file_path)
+            handler.setLevel(logging.DEBUG)
+            formatter = logging.Formatter(formatter)
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+        except OSError as e:
+            logger.error("Failed to configure log file %s: %s", log_file_path, e)
+
+    return logger
+
+# Initialize logger early to capture any setup errors
+BASE_DIR = getattr(settings, 'BASE_DIR', None)
+if not BASE_DIR:
+    raise ImproperlyConfigured(
+        "BASE_DIR must be defined in Django settings and point to the project root directory."
     )
 
+# Temporary logger for setup phase
+logger = logging.getLogger('django_aws_ses')
 
-__all__ = ('ACCESS_KEY', 'SECRET_KEY', 'AWS_SES_REGION_NAME',
-           'AWS_SES_REGION_ENDPOINT', 'AWS_SES_AUTO_THROTTLE',
-           'AWS_SES_RETURN_PATH', 'DKIM_DOMAIN', 'DKIM_PRIVATE_KEY',
-           'DKIM_SELECTOR', 'DKIM_HEADERS', 'TIME_ZONE', 'BASE_DIR',
-           'BOUNCE_LIMIT','SES_BACKEND_DEBUG','SES_BACKEND_DEBUG_LOGFILE_PATH',
-           'SES_BACKEND_DEBUG_LOGFILE_FORMATTER')
+# Fetch AwsSesSettings from database
+aws_ses_settings = get_aws_ses_settings()
 
-aws_ses_Settings = None
+# AWS Credentials
+ACCESS_KEY = aws_ses_settings.access_key if aws_ses_settings else getattr(
+    settings, 'AWS_SES_ACCESS_KEY_ID', getattr(settings, 'AWS_ACCESS_KEY_ID', None)
+)
+SECRET_KEY = aws_ses_settings.secret_key if aws_ses_settings else getattr(
+    settings, 'AWS_SES_SECRET_ACCESS_KEY', getattr(settings, 'AWS_SECRET_ACCESS_KEY', None)
+)
 
-try:
-    aws_ses_Settings, c = AwsSesSettings.objects.get_or_create(site_id=settings.SITE_ID)
-except Exception as e:
-    print("AwsSesSettings does not exist: error: %s" % e)
-    
-ACCESS_KEY = aws_ses_Settings.access_key if aws_ses_Settings else None
-if ACCESS_KEY is None:
-    ACCESS_KEY = getattr(settings, 'AWS_SES_ACCESS_KEY_ID',getattr(settings, 'AWS_ACCESS_KEY_ID', None))
-    
-SECRET_KEY = aws_ses_Settings.secret_key if aws_ses_Settings else None
-if SECRET_KEY is None:
-    SECRET_KEY = getattr(settings, 'AWS_SES_SECRET_ACCESS_KEY',getattr(settings, 'AWS_SECRET_ACCESS_KEY', None))
-    
-AWS_SES_REGION_NAME = aws_ses_Settings.region_name if aws_ses_Settings else None
-if AWS_SES_REGION_NAME is None:
-    AWS_SES_REGION_NAME = getattr(settings, 'AWS_SES_REGION_NAME',getattr(settings, 'AWS_DEFAULT_REGION', 'us-east-1'))
-    
-AWS_SES_REGION_ENDPOINT = aws_ses_Settings.region_endpoint if aws_ses_Settings else None
-if AWS_SES_REGION_ENDPOINT is None:
-    AWS_SES_REGION_ENDPOINT = getattr(settings, 'AWS_SES_REGION_ENDPOINT','email.us-east-1.amazonaws.com')
-    
-BASE_DIR = getattr(settings, 'BASE_DIR', None)
+# Validate credentials
+if not (ACCESS_KEY and SECRET_KEY):
+    raise ImproperlyConfigured(
+        "AWS SES credentials (ACCESS_KEY and SECRET_KEY) must be provided via AwsSesSettings or Django settings."
+    )
 
-DEFAULT_FROM_EMAIL = ""
+# AWS SES Configuration
+AWS_SES_REGION_NAME = aws_ses_settings.region_name if aws_ses_settings else getattr(
+    settings, 'AWS_SES_REGION_NAME', getattr(settings, 'AWS_DEFAULT_REGION', DEFAULTS['AWS_SES_REGION_NAME'])
+)
+AWS_SES_REGION_ENDPOINT = aws_ses_settings.region_endpoint if aws_ses_settings else getattr(
+    settings, 'AWS_SES_REGION_ENDPOINT', DEFAULTS['AWS_SES_REGION_ENDPOINT']
+)
+AWS_SES_AUTO_THROTTLE = getattr(settings, 'AWS_SES_AUTO_THROTTLE', DEFAULTS['AWS_SES_AUTO_THROTTLE'])
+AWS_SES_RETURN_PATH = getattr(settings, 'AWS_SES_RETURN_PATH', DEFAULTS['AWS_SES_RETURN_PATH'])
+AWS_SES_CONFIGURATION_SET = getattr(settings, 'AWS_SES_CONFIGURATION_SET', DEFAULTS['AWS_SES_CONFIGURATION_SET'])
+
+# DKIM Settings
+DKIM_DOMAIN = getattr(settings, 'DKIM_DOMAIN', None)
+DKIM_PRIVATE_KEY = getattr(settings, 'DKIM_PRIVATE_KEY', None)
+DKIM_SELECTOR = getattr(settings, 'DKIM_SELECTOR', DEFAULTS['DKIM_SELECTOR'])
+DKIM_HEADERS = getattr(settings, 'DKIM_HEADERS', DEFAULTS['DKIM_HEADERS'])
+
+# Email Settings
 try:
     site = Site.objects.get_current()
-       
-    DEFAULT_FROM_EMAIL = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no_reply@%s' % site.domain)
-except Exception as e:
-    print("Site Doesn't Exist, please configure Django sites")
-    print("Error is: %s" % e)
-    
+    DEFAULT_FROM_EMAIL = getattr(settings, 'DEFAULT_FROM_EMAIL', f"no-reply@{site.domain}")
+except Site.DoesNotExist:
+    DEFAULT_FROM_EMAIL = getattr(settings, 'DEFAULT_FROM_EMAIL', DEFAULTS['DEFAULT_FROM_EMAIL'])
+    logger.warning(
+        "Django sites framework not configured. Using DEFAULT_FROM_EMAIL: %s. "
+        "Configure the Site model or set DEFAULT_FROM_EMAIL in settings.", DEFAULT_FROM_EMAIL
+    )
+
 HOME_URL = getattr(settings, 'HOME_URL', '')
 
-if not BASE_DIR:
-    raise RuntimeError('No BASE_DIR defined in project settings, django_aws_ses requires BASE_DIR to be defined and pointed at your root directory. i.e. BASE_DIR = os.path.dirname(os.path.abspath(__file__))')
+# Template Settings
+UNSUBSCRIBE_TEMPLATE = getattr(settings, 'UNSUBSCRIBE_TEMPLATE', DEFAULTS['UNSUBSCRIBE_TEMPLATE'])
+BASE_TEMPLATE = getattr(settings, 'BASE_TEMPLATE', DEFAULTS['BASE_TEMPLATE'])
 
-UNSUBSCRIBE_TEMPLET = getattr(settings, 'UNSUBSCRIBE_TEMPLET', 'django_aws_ses/unsubscribe.html')
-BASE_TEMPLET = getattr(settings, 'UNSUBSCRIBE_TEMPLET', 'django_aws_ses/base.html')
-   
-AWS_SES_REGION_ENDPOINT_URL = getattr(settings, 'AWS_SES_REGION_ENDPOINT_URL','https://' + AWS_SES_REGION_ENDPOINT)
-    
-AWS_SES_AUTO_THROTTLE = getattr(settings, 'AWS_SES_AUTO_THROTTLE', 0.5)
-AWS_SES_RETURN_PATH = getattr(settings, 'AWS_SES_RETURN_PATH', None)
+# Bounce and Verification Settings
+VERIFY_BOUNCE_SIGNATURES = getattr(settings, 'AWS_SES_VERIFY_BOUNCE_SIGNATURES', DEFAULTS['VERIFY_BOUNCE_SIGNATURES'])
+BOUNCE_CERT_DOMAINS = getattr(settings, 'AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS', DEFAULTS['BOUNCE_CERT_DOMAINS'])
+SES_BOUNCE_LIMIT = getattr(settings, 'SES_BOUNCE_LIMIT', DEFAULTS['SES_BOUNCE_LIMIT'])
 
-#     if AWS_SES_RETURN_PATH is None:
-#         AWS_SES_RETURN_PATH = "CF Doors <cdfbounced@zeeksgeeks.com>"
-    
-AWS_SES_CONFIGURATION_SET = getattr(settings, 'AWS_SES_CONFIGURATION_SET', None)
+# Debug Settings
+SES_BACKEND_DEBUG = getattr(settings, 'SES_BACKEND_DEBUG', DEFAULTS['SES_BACKEND_DEBUG'])
+SES_BACKEND_DEBUG_LOGFILE_PATH = getattr(
+    settings, 'SES_BACKEND_DEBUG_LOGFILE_PATH', os.path.join(BASE_DIR, 'aws_ses.log')
+)
+SES_BACKEND_DEBUG_LOGFILE_FORMATTER = getattr(
+    settings, 'SES_BACKEND_DEBUG_LOGFILE_FORMATTER', DEFAULTS['SES_BACKEND_DEBUG_LOGFILE_FORMATTER']
+)
 
-DKIM_DOMAIN = getattr(settings, "DKIM_DOMAIN", None)
-DKIM_PRIVATE_KEY = getattr(settings, 'DKIM_PRIVATE_KEY', None)
-DKIM_SELECTOR = getattr(settings, 'DKIM_SELECTOR', 'ses')
-DKIM_HEADERS = getattr(settings, 'DKIM_HEADERS', ('From', 'To', 'Cc', 'Subject'))
-
+# Timezone
 TIME_ZONE = settings.TIME_ZONE
 
-VERIFY_BOUNCE_SIGNATURES = getattr(settings, 'AWS_SES_VERIFY_BOUNCE_SIGNATURES', True)
-
-# Domains that are trusted when retrieving the certificate
-# used to sign bounce messages.
-BOUNCE_CERT_DOMAINS = getattr(settings, 'AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS', (
-    'amazonaws.com',
-    'amazon.com',
-))
-
-SES_BOUNCE_LIMIT = getattr(settings,'BOUNCE_LIMT', 1)
-    
-SES_BACKEND_DEBUG = getattr(settings,'SES_BACKEND_DEBUG', False)
-    
-SES_BACKEND_DEBUG_LOGFILE_PATH = getattr(settings,'SES_BACKEND_DEBUG_LOGFILE_PATH', '%s/aws_ses.log' % BASE_DIR)
-
-SES_BACKEND_DEBUG_LOGFILE_FORMATTER = getattr(settings,'SES_BACKEND_DEBUG_LOGFILE_FORMATTER', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-logger = logging.getLogger('django_aws_ses')
-# logger.setLevel(logging.WARNING)
-if SES_BACKEND_DEBUG:
-    logger.setLevel(logging.INFO)
-    # create a file handler
-    if SES_BACKEND_DEBUG_LOGFILE_PATH:
-        handler = logging.FileHandler(SES_BACKEND_DEBUG_LOGFILE_PATH)
-        handler.setLevel(logging.INFO)
-        # create a logging format
-        formatter = logging.Formatter(SES_BACKEND_DEBUG_LOGFILE_FORMATTER)
-        handler.setFormatter(formatter)
-        # add the handlers to the logger
-        logger.addHandler(handler)
-        #logger.info('something we are logging')
+# Configure logger with final settings
+logger = configure_logger(SES_BACKEND_DEBUG, SES_BACKEND_DEBUG_LOGFILE_PATH, SES_BACKEND_DEBUG_LOGFILE_FORMATTER)
