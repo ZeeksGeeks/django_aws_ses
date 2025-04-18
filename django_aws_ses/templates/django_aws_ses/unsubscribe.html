@@ -5,13 +5,23 @@
     <link rel="stylesheet" href="{% static 'django_aws_ses/css/unsubscribe.css' %}">
 {% endblock %}
 
-{% block title1 %}Unsubscribe{% endblock title1 %}
+{% block title1 %}Email Subscription{% endblock title1 %}
 
 {% block content %}
 <div class="unsubscribe-container">
-    <h3>{{ unsubscribe_message|escape }}</h3>
-    <p>You have been successfully unsubscribed from our email list.</p>
-    <p>Changed your mind? <a href="{% url 'django_aws_ses:aws_ses_unsubscribe' uuid=uuid hash=hash %}?resubscribe=1">Re-subscribe</a></p>
-    <p>Return to <a href="{{ home_url|default:'/' }}">home</a>.</p>
+    {% if user_email %}
+        <h3>{{ unsubscribe_message|escape }}</h3>
+        <p>{{ user_email|escape }} has been {% if request.GET.resubscribe %}re-subscribed{% else %}unsubscribed{% endif %} from our email list.</p>
+        <p>Return to <a href="{{ home_url|default:'/' }}">home</a>.</p>
+    {% else %}
+        <h3>{{ confirmation_message|escape }}</h3>
+        <p>Please confirm your subscription preference for your email.</p>
+        <form method="post" action="">
+            {% csrf_token %}
+            <button type="submit" name="action" value="unsubscribe">Unsubscribe</button>
+            <button type="submit" name="action" value="resubscribe">Re-subscribe</button>
+        </form>
+        <p>Return to <a href="{{ home_url|default:'/' }}">home</a>.</p>
+    {% endif %}
 </div>
 {% endblock content %}

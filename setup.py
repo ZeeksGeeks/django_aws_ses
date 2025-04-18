@@ -25,8 +25,9 @@ setup(
     description="A Django email backend for Amazon SES",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/zeeksgeeks/django_aws_ses",
+    url="https://git-vault.zeeksgeeks.com/zeeksgeeks/django_aws_ses",
     license="MIT",
+    keywords=["django", "aws", "ses", "email", "backend", "sns", "dkim"],
     classifiers=[
         "Development Status :: 4 - Beta",
         "Framework :: Django",

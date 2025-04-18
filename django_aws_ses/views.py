@@ -13,6 +13,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 from django.views.generic.base import TemplateView
+from django.views.decorators.csrf import csrf_protect
 
 from . import settings
 from . import signals
@@ -287,21 +288,25 @@ def handle_bounce(request):
 
 
 class HandleUnsubscribe(TemplateView):
-    """View to handle email unsubscribe requests."""
-    http_method_names = ['get']
+    """View to handle email unsubscribe and re-subscribe requests with confirmation."""
+    http_method_names = ['get', 'post']
     template_name = settings.UNSUBSCRIBE_TEMPLATE
     base_template_name = settings.BASE_TEMPLATE
-    unsubscribe_message = "We Have Unsubscribed the Following Email"
+    confirmation_message = "Please confirm your email subscription preference"
+    unsubscribe_message = "You have been unsubscribed"
+    resubscribe_message = "You have been re-subscribed"
 
     def get_context_data(self, **kwargs):
-        """Add base template and unsubscribe message to context."""
+        """Add base template and appropriate message to context."""
         context = super().get_context_data(**kwargs)
         context['base_template_name'] = self.base_template_name
-        context['unsubscribe_message'] = self.unsubscribe_message
+        context['confirmation_message'] = self.confirmation_message
+        context['unsubscribe_message'] = self.resubscribe_message if self.request.GET.get('resubscribe') else self.unsubscribe_message
+        context['user_email'] = getattr(self, 'user_email', '')
         return context
 
     def get(self, request, *args, **kwargs):
-        """Process unsubscribe request and redirect if invalid."""
+        """Show confirmation page for unsubscribe or re-subscribe."""
         uuid = self.kwargs['uuid']
         hash_value = self.kwargs['hash']
 
@@ -317,12 +322,51 @@ class HandleUnsubscribe(TemplateView):
         except AwsSesUserAddon.DoesNotExist:
             ses = AwsSesUserAddon.objects.create(user=user)
 
-        if user and ses.check_unsubscribe_hash(hash_value):
-            ses.unsubscribe = True
-            ses.save()
-            logger.info(f"Unsubscribed user: {user.email}")
-        else:
+        if not user or not ses.check_unsubscribe_hash(hash_value):
             logger.warning(f"Invalid unsubscribe hash for user: {user.email}")
             return redirect(settings.HOME_URL)
 
+        self.user_email = user.email
         return super().get(request, *args, **kwargs)
+
+    @csrf_protect
+    def post(self, request, *args, **kwargs):
+        """Process unsubscribe or re-subscribe request."""
+        uuid = self.kwargs['uuid']
+        hash_value = self.kwargs['hash']
+        action = request.POST.get('action')
+
+        try:
+            uuid = force_str(urlsafe_base64_decode(uuid))
+            user = User.objects.get(pk=uuid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
+            logger.warning(f"Invalid unsubscribe UUID: {e}")
+            return redirect(settings.HOME_URL)
+
+        try:
+            ses = user.aws_ses
+        except AwsSesUserAddon.DoesNotExist:
+            ses = AwsSesUserAddon.objects.create(user=user)
+
+        if not user or not ses.check_unsubscribe_hash(hash_value):
+            logger.warning(f"Invalid unsubscribe hash for user: {user.email}")
+            return redirect(settings.HOME_URL)
+
+        if action == 'unsubscribe':
+            ses.unsubscribe = True
+            ses.save()
+            logger.info(f"Unsubscribed user: {user.email}")
+            self.user_email = user.email
+            self.template_name = settings.UNSUBSCRIBE_TEMPLATE
+            return self.get(request, *args, **kwargs)
+        elif action == 'resubscribe':
+            ses.unsubscribe = False
+            ses.save()
+            logger.info(f"Re-subscribed user: {user.email}")
+            self.user_email = user.email
+            self.request.GET = request.GET.copy()
+            self.request.GET['resubscribe'] = '1'
+            return self.get(request, *args, **kwargs)
+
+        logger.warning(f"Invalid action for user: {user.email}")
+        return redirect(settings.HOME_URL)
