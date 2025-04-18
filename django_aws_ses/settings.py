@@ -110,18 +110,22 @@ if not BASE_DIR:
 aws_ses_settings = get_aws_ses_settings()
 
 # AWS Credentials
-ACCESS_KEY = aws_ses_settings.access_key if aws_ses_settings else getattr(
-    django_settings, 'AWS_SES_ACCESS_KEY_ID', getattr(django_settings, 'AWS_ACCESS_KEY_ID', None)
-)
-SECRET_KEY = aws_ses_settings.secret_key if aws_ses_settings else getattr(
-    django_settings, 'AWS_SES_SECRET_ACCESS_KEY', getattr(django_settings, 'AWS_SECRET_ACCESS_KEY', None)
-)
-
-if not (ACCESS_KEY and SECRET_KEY):
-    raise ImproperlyConfigured(
-        "AWS SES credentials (AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY) must be provided "
-        "via AwsSesSettings or Django settings."
+if getattr(django_settings, 'TESTING', False):
+    ACCESS_KEY = 'test-key'
+    SECRET_KEY = 'test-secret'
+else:
+    ACCESS_KEY = aws_ses_settings.access_key if aws_ses_settings else getattr(
+        django_settings, 'AWS_SES_ACCESS_KEY_ID', getattr(django_settings, 'AWS_ACCESS_KEY_ID', None)
     )
+    SECRET_KEY = aws_ses_settings.secret_key if aws_ses_settings else getattr(
+        django_settings, 'AWS_SES_SECRET_ACCESS_KEY', getattr(django_settings, 'AWS_SECRET_ACCESS_KEY', None)
+    )
+
+    if not (ACCESS_KEY and SECRET_KEY):
+        raise ImproperlyConfigured(
+            "AWS SES credentials (AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY) must be provided "
+            "via AwsSesSettings or Django settings."
+        )
 
 # AWS SES Configuration
 AWS_SES_REGION_NAME = aws_ses_settings.region_name if aws_ses_settings else getattr(

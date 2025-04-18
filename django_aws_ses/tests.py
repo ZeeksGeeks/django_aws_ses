@@ -1,6 +1,7 @@
 from django.test import TestCase, RequestFactory, override_settings
 from django.core.mail import EmailMessage
 from django.contrib.auth import get_user_model
+from django.contrib.sites.models import Site
 from django.urls import reverse
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
@@ -10,7 +11,7 @@ import json
 from .backends import SESBackend
 from .views import handle_bounce, HandleUnsubscribe
 from .utils import filter_recipients
-from .models import BounceRecord, ComplaintRecord, AwsSesUserAddon
+from .models import BounceRecord, ComplaintRecord, AwsSesUserAddon, AwsSesSettings
 
 User = get_user_model()
 
@@ -21,10 +22,22 @@ User = get_user_model()
     AWS_SES_REGION_ENDPOINT='email.us-east-1.amazonaws.com',
     EMAIL_BACKEND='django_aws_ses.backends.SESBackend',
     SES_BOUNCE_LIMIT=1,
+    TESTING=True,
 )
 class DjangoAwsSesTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
+        # Create a Site instance
+        self.site = Site.objects.create(id=1, domain='example.com', name='example.com')
+        # Create AwsSesSettings for the Site
+        AwsSesSettings.objects.create(
+            site=self.site,
+            access_key='test-key',
+            secret_key='test-secret',
+            region_name='us-east-1',
+            region_endpoint='email.us-east-1.amazonaws.com'
+        )
+        # Create test user
         self.user = User.objects.create_user(
             username='testuser', email='test@example.com', password='testpass'
         )
