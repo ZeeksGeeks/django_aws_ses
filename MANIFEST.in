@@ -1,0 +1,4 @@
+include LICENSE
+include README.md
+recursive-include django_aws_ses/templates *.html
+recursive-include django_aws_ses/static *.css *.js

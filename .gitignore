@@ -1,16 +1,38 @@
-# environment directory
-.venv/
-.pydevproject
+# Python
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
 env/
-/.project
-/logs
-/media
-/static
-__pycache__
-/*/migrations
+.venv/
+*.egg
+
+# Django
+*.log
+*.pot
+*.sqlite3
+media/
+static/
+migrations/
 *.code-workspace
-.env/
+
+# IDE/Editor
 .vscode/
-memory-bank/
-.cursor/rules/
-run/celery/
+.pydevproject
+.project
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS/Environment
+.DS_Store
+.env
+*.bak
+*~
+
+# Package-specific
+aws_ses.log
