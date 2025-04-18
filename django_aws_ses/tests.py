@@ -27,15 +27,19 @@ User = get_user_model()
 class DjangoAwsSesTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
-        # Create a Site instance
-        self.site = Site.objects.create(id=1, domain='example.com', name='example.com')
+        # Use get_or_create to avoid duplicate Site creation
+        self.site, _ = Site.objects.get_or_create(
+            id=1, defaults={'domain': 'example.com', 'name': 'example.com'}
+        )
         # Create AwsSesSettings for the Site
-        AwsSesSettings.objects.create(
+        AwsSesSettings.objects.get_or_create(
             site=self.site,
-            access_key='test-key',
-            secret_key='test-secret',
-            region_name='us-east-1',
-            region_endpoint='email.us-east-1.amazonaws.com'
+            defaults={
+                'access_key': 'test-key',
+                'secret_key': 'test-secret',
+                'region_name': 'us-east-1',
+                'region_endpoint': 'email.us-east-1.amazonaws.com'
+            }
         )
         # Create test user
         self.user = User.objects.create_user(
