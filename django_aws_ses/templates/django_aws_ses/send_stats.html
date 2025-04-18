@@ -1,41 +1,59 @@
 {% extends "admin/base_site.html" %}
+{% load static %}
 
 {% block extrastyle %}
-  {{ block.super }}
-  <style>table {width: 100%;}</style>
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'django_aws_ses/css/send_stats.css' %}">
 {% endblock %}
 
 {% block extrahead %}
-<script type="text/javascript" src="https://www.google.com/jsapi"></script>
-    <script type="text/javascript">
-      google.load("visualization", "1", {packages:["corechart"]});
-      google.setOnLoadCallback(drawChart);
-      function drawChart() {
-        var data = new google.visualization.DataTable();
-        data.addColumn('string', 'Time');
-        data.addColumn('number', 'Delivery Attempts');
-        data.addColumn('number', 'Bounces');
-        data.addColumn('number', 'Complaints');
-        data.addColumn('number', 'Rejected');
-        data.addRows({{ datapoints|length }});
-        {% for datapoint in datapoints %}
-            data.setValue({{ forloop.counter0 }}, 0, {% if local_time %}'{{ datapoint.Timestamp }}'{% else %}'{{ datapoint.Timestamp|slice:"11:19" }} {{ datapoint.Timestamp|slice:":10" }}'{% endif %});
-            data.setValue({{ forloop.counter0 }}, 1, {{ datapoint.DeliveryAttempts }});
-            data.setValue({{ forloop.counter0 }}, 2, {{ datapoint.Bounces }});
-            data.setValue({{ forloop.counter0 }}, 3, {{ datapoint.Complaints }});
-            data.setValue({{ forloop.counter0 }}, 4, {{ datapoint.Rejects }});
-        {% endfor %}
-
-        var chart = new google.visualization.LineChart(document.getElementById('chart'));
-        chart.draw(data, {
-            width: 498,
-            height: 300,
-            title: 'Sending Stats',
-            hAxis: {textPosition: 'none'},
-            chartArea: {left:30,top:30,width:460,height:230},
-            legend: 'bottom'
+    <script src="{% static 'django_aws_ses/js/chart.min.js' %}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const ctx = document.getElementById('chart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [{% for dp in datapoints %}'{% if local_time %}{{ dp.Timestamp }}{% else %}{{ dp.Timestamp|slice:"11:19" }} {{ dp.Timestamp|slice:":10" }}{% endif %}'{% if not forloop.last %},{% endif %}{% endfor %}],
+                    datasets: [
+                        {
+                            label: 'Delivery Attempts',
+                            data: [{% for dp in datapoints %}{{ dp.DeliveryAttempts }}{% if not forloop.last %},{% endif %}{% endfor %}],
+                            borderColor: '#4bc0c0',
+                            fill: false
+                        },
+                        {
+                            label: 'Bounces',
+                            data: [{% for dp in datapoints %}{{ dp.Bounces }}{% if not forloop.last %},{% endif %}{% endfor %}],
+                            borderColor: '#ff6384',
+                            fill: false
+                        },
+                        {
+                            label: 'Complaints',
+                            data: [{% for dp in datapoints %}{{ dp.Complaints }}{% if not forloop.last %},{% endif %}{% endfor %}],
+                            borderColor: '#ffcd56',
+                            fill: false
+                        },
+                        {
+                            label: 'Rejects',
+                            data: [{% for dp in datapoints %}{{ dp.Rejects }}{% if not forloop.last %},{% endif %}{% endfor %}],
+                            borderColor: '#36a2eb',
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        title: { display: true, text: 'Sending Stats' }
+                    },
+                    scales: {
+                        x: { display: false }
+                    }
+                }
+            });
         });
-      }
     </script>
 {% endblock %}
 
@@ -43,25 +61,24 @@
 {% block content_title %}<h1>SES Stats</h1>{% endblock %}
 
 {% block content %}
-<p>Access Key: <span id="aws_access_key_id">{{ access_key }}</span></p>
 <div id="content-main">
     <div class="module">
         <table id="quota">
             <caption>Quotas</caption>
             <thead>
                 <tr>
-                    <th>24 Quota</th>
-                    <th>24 Sent</th>
+                    <th>24h Quota</th>
+                    <th>24h Sent</th>
                     <th>Quota Remaining</th>
                     <th>Per/s Quota</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>{{ 24hour_quota }}</td>
-                    <td>{{ 24hour_sent }}</td>
-                    <td>{{ 24hour_remaining }}</td>
-                    <td>{{ persecond_rate }}</td>
+                    <td>{{ 24hour_quota|floatformat:0 }}</td>
+                    <td>{{ 24hour_sent|floatformat:0 }}</td>
+                    <td>{{ 24hour_remaining|floatformat:0 }}</td>
+                    <td>{{ persecond_rate|floatformat:2 }}</td>
                 </tr>
             </tbody>
         </table>
@@ -80,43 +97,43 @@
             </thead>
             <tbody>
                 <tr>
-                    <td>{{ summary.DeliveryAttempts }}</td>
-                    <td>{{ summary.Bounces }}</td>
-                    <td>{{ summary.Complaints }}</td>
-                    <td>{{ summary.Rejects }}</td>
+                    <td>{{ summary.DeliveryAttempts|default:0 }}</td>
+                    <td>{{ summary.Bounces|default:0 }}</td>
+                    <td>{{ summary.Complaints|default:0 }}</td>
+                    <td>{{ summary.Rejects|default:0 }}</td>
                 </tr>
             </tbody>
         </table>
-        <div id="chart"></div>
+        <canvas id="chart"></canvas>
     </div>
+
     <div class="module">
         <table id="sending_stats">
             <caption>Sending Activity</caption>
             <thead>
-            <tr>
-                <th style="width:35px">Delivery Attempts</th>
-                <th>Bounces</th>
-                <th>Complaints</th>
-                <th>Rejected</th>
-                <th>{% if local_time %}Local Time{% else %}Timestamp{% endif %}</th>
-            </tr>
+                <tr>
+                    <th>Delivery Attempts</th>
+                    <th>Bounces</th>
+                    <th>Complaints</th>
+                    <th>Rejected</th>
+                    <th>{% if local_time %}Local Time{% else %}Timestamp{% endif %}</th>
+                </tr>
             </thead>
             <tbody>
-            {% for datapoint in datapoints %}
-            <tr>
-                <td>{{ datapoint.DeliveryAttempts }}</td>
-                <td>{{ datapoint.Bounces }}</td>
-                <td>{{ datapoint.Complaints }}</td>
-                <td>{{ datapoint.Rejects }}</td>
-                <td>{{ datapoint.Timestamp }}</td>
-            </tr>
-            {% endfor %}
+                {% for datapoint in datapoints %}
+                <tr>
+                    <td>{{ datapoint.DeliveryAttempts|default:0 }}</td>
+                    <td>{{ datapoint.Bounces|default:0 }}</td>
+                    <td>{{ datapoint.Complaints|default:0 }}</td>
+                    <td>{{ datapoint.Rejects|default:0 }}</td>
+                    <td>{{ datapoint.Timestamp|escape }}</td>
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
 {% endblock %}
-
 
 {% block sidebar %}
 <div id="content-related">
@@ -129,11 +146,11 @@
                 </tr>
             </thead>
             <tbody>
-            {% for email_address in verified_emails %}
+                {% for email_address in verified_emails %}
                 <tr>
-                    <td>{{ email_address }}</td>
+                    <td>{{ email_address|escape }}</td>
                 </tr>
-            {% endfor %}
+                {% endfor %}
             </tbody>
             <tfoot>
                 <tr><td><strong>{{ verified_emails|length }}</strong></td></tr>

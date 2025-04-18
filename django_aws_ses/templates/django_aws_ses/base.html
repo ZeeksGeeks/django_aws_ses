@@ -1,14 +1,19 @@
 {% load static %}
 <!DOCTYPE html>
-<html>
-	<head>
-		<title>{% block title1 %}N/A {% endblock title1 %} | {% block title2 %} {{ site.domain }}{% endblock title2 %}</title>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{% block title1 %}N/A{% endblock title1 %} | {% block title2 %}{{ site.domain|escape }}{% endblock title2 %}</title>
+        <link rel="stylesheet" href="{% static 'django_aws_ses/css/base.css' %}">
+        <link rel="icon" href="{% static 'django_aws_ses/favicon.ico' %}" type="image/x-icon">
+        {% block extrahead %}{% endblock extrahead %}
     </head>
     <body>
-    	<div id="body_contaner" class=" cardContenet">
-			{% block content %}
-			if you see this, something is wrong!
-			{% endblock content %} 
-		</div>
-	</body>
+        <div id="body_container" class="cardContent">
+            {% block content %}
+                If you see this, something is wrong!
+            {% endblock content %}
+        </div>
+    </body>
 </html>

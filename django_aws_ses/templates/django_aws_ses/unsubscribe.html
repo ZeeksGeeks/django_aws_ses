@@ -1,11 +1,17 @@
-{% extends base_template_name %}
+{% extends 'django_aws_ses/base.html' %}
+{% load static %}
 
-{% block title1 %}
-Unsubscribe  
-{% endblock title1 %}
+{% block extrahead %}
+    <link rel="stylesheet" href="{% static 'django_aws_ses/css/unsubscribe.css' %}">
+{% endblock %}
 
-{% block content %}			
-<div>
-	<h3>{{ unsubscribe_message }}</h3>
+{% block title1 %}Unsubscribe{% endblock title1 %}
+
+{% block content %}
+<div class="unsubscribe-container">
+    <h3>{{ unsubscribe_message|escape }}</h3>
+    <p>You have been successfully unsubscribed from our email list.</p>
+    <p>Changed your mind? <a href="{% url 'django_aws_ses:aws_ses_unsubscribe' uuid=uuid hash=hash %}?resubscribe=1">Re-subscribe</a></p>
+    <p>Return to <a href="{{ home_url|default:'/' }}">home</a>.</p>
 </div>
 {% endblock content %}
