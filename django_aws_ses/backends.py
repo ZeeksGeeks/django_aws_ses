@@ -242,6 +242,7 @@ class SESBackend(BaseEmailBackend):
                     f"message_id={message.extra_headers['message_id']}, request_id={message.extra_headers['request_id']}"
                 )
                 list_of_response.append(response)
+                signals.email_post_send.send_robust(self.__class__, message=message)
             except ResponseError as err:
                 logger.error(f"Failed to send email: {err}")
                 message.extra_headers.update({

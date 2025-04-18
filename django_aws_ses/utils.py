@@ -212,6 +212,13 @@ def receiver_email_pre_send(sender, message=None, **kwargs):
     """
     pass
 
+@receiver(signals.email_post_send)
+def receiver_email_post_send(sender, message=None, **kwargs):
+    """Handle post-send actions (e.g., log success, update metrics)."""
+    if message:
+        logger.info(f"Email sent successfully to {message.recipients()}")
+        # Add custom logic here
+
 def filter_recipients(recipiant_list):
     """
     Filters a list of recipient email addresses to exclude invalid or blacklisted emails.
