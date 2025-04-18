@@ -212,11 +212,11 @@ def receiver_email_pre_send(sender, message=None, **kwargs):
     """
     pass
 
-def filter_recipiants(recipiant_list):
+def filter_recipients(recipiant_list):
     """
     Filters a list of recipient email addresses to exclude invalid or blacklisted emails.
     """
-    logger.info("Starting filter_recipiants: %s", recipiant_list)
+    logger.info("Starting filter_recipients: %s", recipiant_list)
 
     # Ensure recipient_list is a list
     if not isinstance(recipiant_list, list):
@@ -224,43 +224,43 @@ def filter_recipiants(recipiant_list):
         recipiant_list = [recipiant_list]
 
     if recipiant_list:
-        recipiant_list = filter_recipiants_with_unsubscribe(recipiant_list)
-        recipiant_list = filter_recipiants_with_complaint_records(recipiant_list)
-        recipiant_list = filter_recipiants_with_bounce_records(recipiant_list)
-        recipiant_list = filter_recipiants_with_validater_email_domain(recipiant_list)
+        recipiant_list = filter_recipients_with_unsubscribe(recipiant_list)
+        recipiant_list = filter_recipients_with_complaint_records(recipiant_list)
+        recipiant_list = filter_recipients_with_bounce_records(recipiant_list)
+        recipiant_list = filter_recipients_with_validater_email_domain(recipiant_list)
 
     logger.info("Filtered recipient list: %s", recipiant_list)
     return recipiant_list
 
-def filter_recipiants_with_unsubscribe(recipiant_list):
+def filter_recipients_with_unsubscribe(recipiant_list):
     """
     Removes recipients who have unsubscribed.
     """
     blacklist_emails = list(set([record.email for record in User.objects.filter(aws_ses__unsubscribe=True)]))
-    return filter_recipiants_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
+    return filter_recipients_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
 
-def filter_recipiants_with_complaint_records(recipiant_list):
+def filter_recipients_with_complaint_records(recipiant_list):
     """
     Removes recipients with complaint records.
     """
     blacklist_emails = list(set([record.email for record in ComplaintRecord.objects.filter(email__isnull=False)]))
-    return filter_recipiants_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
+    return filter_recipients_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
 
-def filter_recipiants_with_bounce_records(recipiant_list):
+def filter_recipients_with_bounce_records(recipiant_list):
     """
     Removes recipients with bounce records exceeding SES_BOUNCE_LIMIT.
     """
     blacklist_emails = list(set([record.email for record in BounceRecord.objects.filter(email__isnull=False)
                                 .annotate(total=Count('email')).filter(total__gte=settings.SES_BOUNCE_LIMIT)]))
-    return filter_recipiants_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
+    return filter_recipients_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
 
-def filter_recipiants_with_blacklist(recipiant_list, blacklist_emails):
+def filter_recipients_with_blacklist(recipiant_list, blacklist_emails):
     """
     Filters out emails from a blacklist.
     """
     return [email for email in recipiant_list if email not in blacklist_emails]
 
-def filter_recipiants_with_validater_email_domain(recipiant_list):
+def filter_recipients_with_validater_email_domain(recipiant_list):
     """
     Validates email domains for new recipients.
     """
