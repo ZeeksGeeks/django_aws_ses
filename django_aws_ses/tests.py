@@ -7,6 +7,7 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import patch, Mock
 import json
+import uuid
 
 from .backends import SESBackend
 from .views import handle_bounce, HandleUnsubscribe
@@ -43,6 +44,7 @@ class DjangoAwsSesTests(TestCase):
         )
         # Ensure AwsSesSettings exists
         if not AwsSesSettings.objects.filter(site=self.site).exists():
+            print(f"Creating AwsSesSettings for site {self.site.id}")
             AwsSesSettings.objects.create(
                 site=self.site,
                 access_key='test-key',
@@ -50,6 +52,12 @@ class DjangoAwsSesTests(TestCase):
                 region_name='us-east-1',
                 region_endpoint='email.us-east-1.amazonaws.com'
             )
+        # Verify AwsSesSettings creation
+        try:
+            settings_obj = AwsSesSettings.objects.get(site=self.site)
+            print(f"AwsSesSettings created: {settings_obj}")
+        except AwsSesSettings.DoesNotExist:
+            print("Failed to verify AwsSesSettings creation")
         # Create test user
         self.user = User.objects.create_user(
             username='testuser', email='test@example.com', password='testpass'
@@ -64,6 +72,11 @@ class DjangoAwsSesTests(TestCase):
         mock_ses.send_raw_email.return_value = {
             'MessageId': 'test-id',
             'ResponseMetadata': {'RequestId': 'test-request-id'}
+        }
+        mock_ses.get_send_quota.return_value = {
+            'MaxSendRate': 10.0,
+            'Max24HourSend': 20000.0,
+            'SentLast24Hours': 1000.0
         }
         mock_boto_client.return_value = mock_ses
 
@@ -124,9 +137,10 @@ class DjangoAwsSesTests(TestCase):
 
     def test_unsubscribe_confirmation(self):
         """Test unsubscribe confirmation page and action."""
-        uuid = urlsafe_base64_encode(force_bytes(str(self.user.pk)))
+        user_uuid = str(uuid.uuid1())
+        uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
 
         # Test GET (confirmation page)
         response = self.client.get(url)
@@ -145,9 +159,10 @@ class DjangoAwsSesTests(TestCase):
         """Test re-subscribe confirmation action."""
         self.ses_addon.unsubscribe = True
         self.ses_addon.save()
-        uuid = urlsafe_base64_encode(force_bytes(str(self.user.pk)))
+        user_uuid = str(uuid.uuid1())
+        uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
 
         response = self.client.post(url, {'action': 'resubscribe'})
         self.ses_addon.refresh_from_db()
