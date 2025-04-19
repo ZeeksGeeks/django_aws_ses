@@ -56,6 +56,8 @@ class DjangoAwsSesTests(TestCase):
         )
         # Retrieve the AwsSesUserAddon created by the post_save signal
         self.ses_addon = AwsSesUserAddon.objects.get(user=self.user)
+        # Reset client session to prevent state interference
+        self.client = self.client_class()
 
     @patch('boto3.client')
     def test_email_sending(self, mock_boto_client):
@@ -136,7 +138,7 @@ class DjangoAwsSesTests(TestCase):
         # Test GET (confirmation page)
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Please confirm your subscription preference')
+        self.assertContains(response, 'Please confirm your email subscription preference', html=True)
         self.assertFalse(self.ses_addon.unsubscribe)
 
         # Test POST (unsubscribe)
