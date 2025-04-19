@@ -44,7 +44,6 @@ class DjangoAwsSesTests(TestCase):
         )
         # Ensure AwsSesSettings exists
         if not AwsSesSettings.objects.filter(site=self.site).exists():
-            print(f"Creating AwsSesSettings for site {self.site.id}")
             AwsSesSettings.objects.create(
                 site=self.site,
                 access_key='test-key',
@@ -52,12 +51,6 @@ class DjangoAwsSesTests(TestCase):
                 region_name='us-east-1',
                 region_endpoint='email.us-east-1.amazonaws.com'
             )
-        # Verify AwsSesSettings creation
-        try:
-            settings_obj = AwsSesSettings.objects.get(site=self.site)
-            print(f"AwsSesSettings created: {settings_obj}")
-        except AwsSesSettings.DoesNotExist:
-            print("Failed to verify AwsSesSettings creation")
         # Create test user
         self.user = User.objects.create_user(
             username='testuser', email='test@example.com', password='testpass'
@@ -140,7 +133,7 @@ class DjangoAwsSesTests(TestCase):
         user_uuid = str(uuid.uuid1())
         uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
 
         # Test GET (confirmation page)
         response = self.client.get(url)
@@ -162,7 +155,7 @@ class DjangoAwsSesTests(TestCase):
         user_uuid = str(uuid.uuid1())
         uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
 
         response = self.client.post(url, {'action': 'resubscribe'}, follow=True)
         self.ses_addon.refresh_from_db()
