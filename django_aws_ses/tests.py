@@ -140,7 +140,7 @@ class DjangoAwsSesTests(TestCase):
         user_uuid = str(uuid.uuid1())
         uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
 
         # Test GET (confirmation page)
         response = self.client.get(url)
@@ -162,7 +162,7 @@ class DjangoAwsSesTests(TestCase):
         user_uuid = str(uuid.uuid1())
         uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
 
         response = self.client.post(url, {'action': 'resubscribe'}, follow=True)
         self.ses_addon.refresh_from_db()
