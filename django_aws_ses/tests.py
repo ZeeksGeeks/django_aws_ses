@@ -140,7 +140,7 @@ class DjangoAwsSesTests(TestCase):
         user_uuid = str(uuid.uuid1())
         uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
 
         # Test GET (confirmation page)
         response = self.client.get(url)
@@ -149,7 +149,7 @@ class DjangoAwsSesTests(TestCase):
         self.assertFalse(self.ses_addon.unsubscribe)
 
         # Test POST (unsubscribe)
-        response = self.client.post(url, {'action': 'unsubscribe'})
+        response = self.client.post(url, {'action': 'unsubscribe'}, follow=True)
         self.ses_addon.refresh_from_db()
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'You have been unsubscribed')
@@ -162,9 +162,9 @@ class DjangoAwsSesTests(TestCase):
         user_uuid = str(uuid.uuid1())
         uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': user_uuid, 'hash': hash_value})
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
 
-        response = self.client.post(url, {'action': 'resubscribe'})
+        response = self.client.post(url, {'action': 'resubscribe'}, follow=True)
         self.ses_addon.refresh_from_db()
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'You have been re-subscribed')
