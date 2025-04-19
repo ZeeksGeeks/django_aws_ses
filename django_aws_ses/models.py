@@ -11,6 +11,7 @@ from django.dispatch import receiver
 from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
+from django.core.signing import Signer, BadSignature
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -67,25 +68,34 @@ class AwsSesUserAddon(models.Model):
         email_field = self.user.get_email_field_name()
         return getattr(self.user, email_field, '') or ''
 
-    def unsubscribe_hash_generator(self):
-        """Generate a secure hash for unsubscribe verification."""
-        email = self.get_email()
-        message = f"{self.user.pk}{email}".encode()
-        return hmac.new(
-            settings.SECRET_KEY.encode(),
-            message,
-            hashlib.sha256
-        ).hexdigest()
+    def generate_unsubscribe_token(self):
+        """Generate a signed token for unsubscribe verification."""
+        signer = Signer()
+        value = f"{self.user.pk}:{self.get_email()}"
+        return signer.sign(value)
 
-    def check_unsubscribe_hash(self, hash_value):
-        """Verify an unsubscribe hash."""
-        return hmac.compare_digest(self.unsubscribe_hash_generator(), hash_value)
+    def verify_unsubscribe_token(self, token):
+        """Verify a signed unsubscribe token.
+
+        Args:
+            token (str): The signed token to verify.
+
+        Returns:
+            bool: True if the token is valid, False otherwise.
+        """
+        signer = Signer()
+        try:
+            value = signer.unsign(token)
+            pk, email = value.split(':')
+            return str(self.user.pk) == pk and self.get_email() == email
+        except BadSignature:
+            return False
 
     def unsubscribe_url_generator(self):
-        """Generate a secure unsubscribe URL."""
-        uuid = urlsafe_base64_encode(force_bytes(str(self.user.pk)))
-        hash_value = self.unsubscribe_hash_generator()
-        return reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={"uuid": uuid, "hash": hash_value})
+        """Generate a secure unsubscribe URL with a signed token."""
+        uuid = urlsafe_base64_encode(str(self.user.pk).encode())
+        token = self.generate_unsubscribe_token()
+        return reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={"uuid": uuid, "token": token})
 
 class SESStat(models.Model):
     """Daily statistics for AWS SES email sending."""

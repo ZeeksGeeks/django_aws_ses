@@ -7,7 +7,6 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from unittest.mock import patch, Mock
 import json
-import uuid
 
 from .backends import SESBackend
 from .views import handle_bounce, HandleUnsubscribe
@@ -131,8 +130,8 @@ class DjangoAwsSesTests(TestCase):
     def test_unsubscribe_confirmation(self):
         """Test unsubscribe confirmation page and action."""
         uuid_b64 = urlsafe_base64_encode(str(self.user.pk).encode())
-        hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
+        token = self.ses_addon.generate_unsubscribe_token()
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'token': token})
 
         # Test GET (confirmation page)
         response = self.client.get(url)
@@ -141,7 +140,7 @@ class DjangoAwsSesTests(TestCase):
         self.assertFalse(self.ses_addon.unsubscribe)
 
         # Test POST (unsubscribe)
-        response = self.client.post(url, {'action': 'unsubscribe'}, follow=True)
+        response = self.client.post(url, {'action': 'unsubscribe'})
         self.ses_addon.refresh_from_db()
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'You have been unsubscribed')
@@ -152,10 +151,10 @@ class DjangoAwsSesTests(TestCase):
         self.ses_addon.unsubscribe = True
         self.ses_addon.save()
         uuid_b64 = urlsafe_base64_encode(str(self.user.pk).encode())
-        hash_value = self.ses_addon.unsubscribe_hash_generator()
-        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
+        token = self.ses_addon.generate_unsubscribe_token()
+        url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'token': token})
 
-        response = self.client.post(url, {'action': 'resubscribe'}, follow=True)
+        response = self.client.post(url, {'action': 'resubscribe'})
         self.ses_addon.refresh_from_db()
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'You have been re-subscribed')

@@ -13,7 +13,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 from django.views.generic.base import TemplateView
-from django.views.decorators.csrf import csrf_protect
+from django.core.signing import Signer, BadSignature
 
 from . import settings
 from . import signals
@@ -308,7 +308,7 @@ class HandleUnsubscribe(TemplateView):
     def get(self, request, *args, **kwargs):
         """Show confirmation page for unsubscribe or re-subscribe."""
         uuid = self.kwargs['uuid']
-        hash_value = self.kwargs['hash']
+        token = self.kwargs['token']
 
         try:
             uuid = force_str(urlsafe_base64_decode(uuid))
@@ -322,18 +322,17 @@ class HandleUnsubscribe(TemplateView):
         except AwsSesUserAddon.DoesNotExist:
             ses = AwsSesUserAddon.objects.create(user=user)
 
-        if not user or not ses.check_unsubscribe_hash(hash_value):
-            logger.warning(f"Invalid unsubscribe hash for user: {user.email}")
+        if not user or not ses.verify_unsubscribe_token(token):
+            logger.warning(f"Invalid token for user: {user.email}")
             return redirect(settings.HOME_URL)
 
         self.user_email = user.email
         return super().get(request, *args, **kwargs)
 
-    @csrf_protect
     def post(self, request, *args, **kwargs):
         """Process unsubscribe or re-subscribe request."""
         uuid = self.kwargs['uuid']
-        hash_value = self.kwargs['hash']
+        token = self.kwargs['token']
         action = request.POST.get('action')
 
         try:
@@ -348,8 +347,8 @@ class HandleUnsubscribe(TemplateView):
         except AwsSesUserAddon.DoesNotExist:
             ses = AwsSesUserAddon.objects.create(user=user)
 
-        if not user or not ses.check_unsubscribe_hash(hash_value):
-            logger.warning(f"Invalid unsubscribe hash for user: {user.email}")
+        if not user or not ses.verify_unsubscribe_token(token):
+            logger.warning(f"Invalid token for user: {user.email}")
             return redirect(settings.HOME_URL)
 
         if action == 'unsubscribe':

@@ -12,5 +12,5 @@ app_name = "django_aws_ses"
 urlpatterns = [
     path('status/', dashboard, name='aws_ses_status'),
     path('bounce/', csrf_exempt(handle_bounce),name='aws_ses_bounce'),
-    path('unsubscribe/<str:uuid>/<str:hash>/', HandleUnsubscribe.as_view(), name='aws_ses_unsubscribe')
+    path('unsubscribe/<str:uuid>/<str:token>/', HandleUnsubscribe.as_view(), name='aws_ses_unsubscribe')
 ]
