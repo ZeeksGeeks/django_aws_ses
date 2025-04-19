@@ -311,6 +311,7 @@ class HandleUnsubscribe(TemplateView):
         """Show confirmation page for unsubscribe or re-subscribe."""
         uuid = self.kwargs['uuid']
         token = self.kwargs['token']
+        self.action = ''  # Reset action to ensure confirmation page
 
         try:
             uuid = force_str(urlsafe_base64_decode(uuid))
@@ -329,7 +330,6 @@ class HandleUnsubscribe(TemplateView):
             return redirect(settings.HOME_URL)
 
         self.user_email = user.email
-        self.action = ''  # Ensure GET renders confirmation page
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -360,13 +360,13 @@ class HandleUnsubscribe(TemplateView):
             ses.save()
             logger.info(f"Unsubscribed user: {user.email}")
             self.action = 'unsubscribe'
-            return render(request, self.template_name, self.get_context_data())
         elif action == 'resubscribe':
             ses.unsubscribe = False
             ses.save()
             logger.info(f"Re-subscribed user: {user.email}")
             self.action = 'resubscribe'
-            return render(request, self.template_name, self.get_context_data())
+        else:
+            logger.warning(f"Invalid action for user: {user.email}")
+            return redirect(settings.HOME_URL)
 
-        logger.warning(f"Invalid action for user: {user.email}")
-        return redirect(settings.HOME_URL)
+        return render(request, self.template_name, self.get_context_data())
