@@ -82,7 +82,7 @@ class SESBackend(BaseEmailBackend):
         self._access_key_id = aws_access_key or settings.ACCESS_KEY
         self._access_key = aws_secret_key or settings.SECRET_KEY
         self._region_name = aws_region_name or settings.AWS_SES_REGION_NAME
-        self._endpoint_url = aws_region_endpoint or settings.AWS_SES_REGION_ENDPOINT_URL
+        self._endpoint_url = aws_region_endpoint or settings.AWS_SES_REGION_ENDPOINT
         self._throttle = aws_auto_throttle or settings.AWS_SES_AUTO_THROTTLE
         self.dkim_domain = dkim_domain or settings.DKIM_DOMAIN
         self.dkim_key = dkim_key or settings.DKIM_PRIVATE_KEY

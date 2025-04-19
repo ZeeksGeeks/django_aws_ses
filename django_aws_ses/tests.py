@@ -41,6 +41,15 @@ class DjangoAwsSesTests(TestCase):
                 'region_endpoint': 'email.us-east-1.amazonaws.com'
             }
         )
+        # Ensure AwsSesSettings exists
+        if not AwsSesSettings.objects.filter(site=self.site).exists():
+            AwsSesSettings.objects.create(
+                site=self.site,
+                access_key='test-key',
+                secret_key='test-secret',
+                region_name='us-east-1',
+                region_endpoint='email.us-east-1.amazonaws.com'
+            )
         # Create test user
         self.user = User.objects.create_user(
             username='testuser', email='test@example.com', password='testpass'

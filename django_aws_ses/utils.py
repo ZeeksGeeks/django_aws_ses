@@ -271,7 +271,7 @@ def filter_recipients_with_validater_email_domain(recipiant_list):
     """
     Validates email domains for new recipients.
     """
-    sent_list = [e.destination for e in SendRecord.objects.filter(destination__in=recipiant_list).distinct("destination")]
+    sent_list = list(set([e.destination for e in SendRecord.objects.filter(destination__in=recipiant_list).distinct()]))
     test_list = [e for e in recipiant_list if e not in sent_list]
 
     for e in test_list:
