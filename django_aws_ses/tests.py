@@ -45,7 +45,8 @@ class DjangoAwsSesTests(TestCase):
         self.user = User.objects.create_user(
             username='testuser', email='test@example.com', password='testpass'
         )
-        self.ses_addon = AwsSesUserAddon.objects.create(user=self.user)
+        # Retrieve the AwsSesUserAddon created by the post_save signal
+        self.ses_addon = AwsSesUserAddon.objects.get(user=self.user)
 
     @patch('boto3.client')
     def test_email_sending(self, mock_boto_client):

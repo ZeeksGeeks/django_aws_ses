@@ -15,8 +15,7 @@ from django.utils.http import urlsafe_base64_encode
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-
-@receiver(post_save, sender=Site)
+@receiver(post_save, sender=Site, dispatch_uid="update_awsses_settings")
 def update_awsses_settings(sender, instance, created, **kwargs):
     """Create or update AwsSesSettings when a Site is saved."""
     try:
@@ -26,8 +25,7 @@ def update_awsses_settings(sender, instance, created, **kwargs):
     except Exception as e:
         logger.error(f"Failed to save AwsSesSettings for site {instance.id}: {e}")
 
-
-@receiver(post_save, sender=User)
+@receiver(post_save, sender=User, dispatch_uid="update_awsses_user")
 def update_awsses_user(sender, instance, created, **kwargs):
     """Create or update AwsSesUserAddon when a User is saved."""
     try:
@@ -36,7 +34,6 @@ def update_awsses_user(sender, instance, created, **kwargs):
         instance.aws_ses.save()
     except Exception as e:
         logger.error(f"Failed to save AwsSesUserAddon for user {instance.id}: {e}")
-
 
 class AwsSesSettings(models.Model):
     """AWS SES configuration settings for a site."""
@@ -52,7 +49,6 @@ class AwsSesSettings(models.Model):
 
     def __str__(self):
         return f"AWS SES Settings for {self.site.domain}"
-
 
 class AwsSesUserAddon(models.Model):
     """Additional AWS SES data for a user, including unsubscribe status."""
@@ -91,7 +87,6 @@ class AwsSesUserAddon(models.Model):
         hash_value = self.unsubscribe_hash_generator()
         return reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={"uuid": uuid, "hash": hash_value})
 
-
 class SESStat(models.Model):
     """Daily statistics for AWS SES email sending."""
     date = models.DateField(unique=True, db_index=True)
@@ -107,7 +102,6 @@ class SESStat(models.Model):
 
     def __str__(self):
         return self.date.strftime("%Y-%m-%d")
-
 
 class BounceRecord(models.Model):
     """Record of an email bounce event from AWS SES."""
@@ -130,7 +124,6 @@ class BounceRecord(models.Model):
     def __str__(self):
         return f"Bounce: {self.email} ({self.bounce_type}, {self.timestamp})"
 
-
 class ComplaintRecord(models.Model):
     """Record of an email complaint event from AWS SES."""
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -146,7 +139,6 @@ class ComplaintRecord(models.Model):
 
     def __str__(self):
         return f"Complaint: {self.email} ({self.feedback_type}, {self.timestamp})"
-
 
 class SendRecord(models.Model):
     """Record of an email send or delivery event from AWS SES."""
@@ -174,7 +166,6 @@ class SendRecord(models.Model):
     def __str__(self):
         return f"Send: {self.source} to {self.destination} ({self.status}, {self.timestamp})"
 
-
 class UnknownRecord(models.Model):
     """Record of unrecognized AWS SES events."""
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -188,7 +179,6 @@ class UnknownRecord(models.Model):
 
     def __str__(self):
         return f"Unknown Event: {self.event_type} ({self.timestamp})"
-
 
 class BlackListedDomains(models.Model):
     """Domains blacklisted for email sending."""
