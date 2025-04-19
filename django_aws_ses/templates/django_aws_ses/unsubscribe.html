@@ -1,27 +1,21 @@
-{% extends 'django_aws_ses/base.html' %}
-{% load static %}
-
-{% block extrahead %}
-    <link rel="stylesheet" href="{% static 'django_aws_ses/css/unsubscribe.css' %}">
-{% endblock %}
-
-{% block title1 %}Email Subscription{% endblock title1 %}
-
+{% extends base_template_name %}
 {% block content %}
 <div class="unsubscribe-container">
-    {% if user_email %}
-        <h3>{{ unsubscribe_message|escape }}</h3>
-        <p>{{ user_email|escape }} has been {% if request.GET.resubscribe %}re-subscribed{% else %}unsubscribed{% endif %} from our email list.</p>
-        <p>Return to <a href="{{ home_url|default:'/' }}">home</a>.</p>
+    {% if action == 'unsubscribe' %}
+        <h3>{{ unsubscribe_message }}</h3>
+        <p>{{ user_email }} has been unsubscribed from our email list.</p>
+        <p>Return to <a href="/">home</a>.</p>
+    {% elif action == 'resubscribe' %}
+        <h3>{{ resubscribe_message }}</h3>
+        <p>{{ user_email }} has been re-subscribed to our email list.</p>
+        <p>Return to <a href="/">home</a>.</p>
     {% else %}
-        <h3>{{ confirmation_message|escape }}</h3>
-        <p>Please confirm your subscription preference for your email.</p>
+        <h3>{{ confirmation_message }}</h3>
+        <p>Manage subscription for {{ user_email }}</p>
         <form method="post" action="">
-            {% csrf_token %}
             <button type="submit" name="action" value="unsubscribe">Unsubscribe</button>
             <button type="submit" name="action" value="resubscribe">Re-subscribe</button>
         </form>
-        <p>Return to <a href="{{ home_url|default:'/' }}">home</a>.</p>
     {% endif %}
 </div>
-{% endblock content %}
+{% endblock %}

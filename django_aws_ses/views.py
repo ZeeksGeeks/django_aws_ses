@@ -301,8 +301,10 @@ class HandleUnsubscribe(TemplateView):
         context = super().get_context_data(**kwargs)
         context['base_template_name'] = self.base_template_name
         context['confirmation_message'] = self.confirmation_message
-        context['unsubscribe_message'] = self.resubscribe_message if self.request.GET.get('resubscribe') else self.unsubscribe_message
+        context['unsubscribe_message'] = self.unsubscribe_message
+        context['resubscribe_message'] = self.resubscribe_message
         context['user_email'] = getattr(self, 'user_email', '')
+        context['action'] = getattr(self, 'action', '')
         return context
 
     def get(self, request, *args, **kwargs):
@@ -327,6 +329,7 @@ class HandleUnsubscribe(TemplateView):
             return redirect(settings.HOME_URL)
 
         self.user_email = user.email
+        self.action = ''  # Ensure GET renders confirmation page
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
@@ -351,21 +354,19 @@ class HandleUnsubscribe(TemplateView):
             logger.warning(f"Invalid token for user: {user.email}")
             return redirect(settings.HOME_URL)
 
+        self.user_email = user.email
         if action == 'unsubscribe':
             ses.unsubscribe = True
             ses.save()
             logger.info(f"Unsubscribed user: {user.email}")
-            self.user_email = user.email
-            self.template_name = settings.UNSUBSCRIBE_TEMPLATE
-            return self.get(request, *args, **kwargs)
+            self.action = 'unsubscribe'
+            return render(request, self.template_name, self.get_context_data())
         elif action == 'resubscribe':
             ses.unsubscribe = False
             ses.save()
             logger.info(f"Re-subscribed user: {user.email}")
-            self.user_email = user.email
-            self.request.GET = request.GET.copy()
-            self.request.GET['resubscribe'] = '1'
-            return self.get(request, *args, **kwargs)
+            self.action = 'resubscribe'
+            return render(request, self.template_name, self.get_context_data())
 
         logger.warning(f"Invalid action for user: {user.email}")
         return redirect(settings.HOME_URL)
