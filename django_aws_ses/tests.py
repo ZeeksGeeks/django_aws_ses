@@ -130,8 +130,7 @@ class DjangoAwsSesTests(TestCase):
 
     def test_unsubscribe_confirmation(self):
         """Test unsubscribe confirmation page and action."""
-        user_uuid = str(uuid.uuid1())
-        uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
+        uuid_b64 = urlsafe_base64_encode(str(self.user.pk).encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
         url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
 
@@ -152,8 +151,7 @@ class DjangoAwsSesTests(TestCase):
         """Test re-subscribe confirmation action."""
         self.ses_addon.unsubscribe = True
         self.ses_addon.save()
-        user_uuid = str(uuid.uuid1())
-        uuid_b64 = urlsafe_base64_encode(user_uuid.encode())
+        uuid_b64 = urlsafe_base64_encode(str(self.user.pk).encode())
         hash_value = self.ses_addon.unsubscribe_hash_generator()
         url = reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={'uuid': uuid_b64, 'hash': hash_value})
 

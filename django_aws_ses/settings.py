@@ -159,7 +159,7 @@ except Site.DoesNotExist:
     )
 
 # Other Settings
-HOME_URL = getattr(django_settings, 'HOME_URL', '')
+HOME_URL = getattr(django_settings, 'HOME_URL', '/')
 UNSUBSCRIBE_TEMPLATE = getattr(django_settings, 'UNSUBSCRIBE_TEMPLATE', DEFAULTS['UNSUBSCRIBE_TEMPLATE'])
 BASE_TEMPLATE = getattr(django_settings, 'BASE_TEMPLATE', DEFAULTS['BASE_TEMPLATE'])
 VERIFY_BOUNCE_SIGNATURES = getattr(django_settings, 'AWS_SES_VERIFY_BOUNCE_SIGNATURES', DEFAULTS['VERIFY_BOUNCE_SIGNATURES'])
