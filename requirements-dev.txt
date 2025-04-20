@@ -1,3 +1,6 @@
 pytest 
 pytest-django 
 mock
+setuptools 
+wheel 
+twine
