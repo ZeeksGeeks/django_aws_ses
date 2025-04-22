@@ -1,46 +1,41 @@
 from setuptools import setup, find_packages
 
-with open("README.md", "r", encoding="utf-8") as f:
-    long_description = f.read()
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
 
 setup(
     name="django_aws_ses",
     version="0.1.0",
-    packages=find_packages(exclude=["tests"]),
-    include_package_data=True,
-    python_requires=">=3.8",
-    install_requires=[
-        "django>=3.2",
-        "boto3>=1.18",
-        "requests>=2.25",
-        "cryptography>=3.4",
-        "dnspython>=2.1",
-        "pytz>=2021.1",
-    ],
-    extras_require={
-        "dkim": ["dkimpy>=1.0"],
-    },
-    author="Ray Jessop",
-    author_email="development@zeeksgeeks.com",
-    description="A Django email backend for Amazon SES",
+    author="Your Name",
+    author_email="your.email@example.com",
+    description="A Django email backend for Amazon SES with bounce and complaint handling",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://git-vault.zeeksgeeks.com/zeeksgeeks/django_aws_ses",
-    license="MIT",
-    keywords=["django", "aws", "ses", "email", "backend", "sns", "dkim"],
-    classifiers=[
-        "Development Status :: 4 - Beta",
-        "Framework :: Django",
-        "Framework :: Django :: 3.2",
-        "Framework :: Django :: 4.0",
-        "Framework :: Django :: 4.2",
-        "Intended Audience :: Developers",
-        "License :: OSI Approved :: MIT License",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-        "Programming Language :: Python :: 3.11",
-        "Topic :: Communications :: Email",
+    url="https://github.com/yourusername/django_aws_ses",  # Update with your repo
+    packages=find_packages(),
+    include_package_data=True,
+    install_requires=[
+        'django>=3.2',
+        'boto3>=1.18.0',
+        'requests>=2.26.0',
+        'cryptography>=3.4.7',
+        'dnspython>=2.1.0',
     ],
+    extras_require={
+        'dev': [
+            'pytest>=7.0.0',
+            'pytest-django>=4.5.0',
+            'mock>=4.0.3',
+        ],
+        'dkim': [
+            'dkimpy>=1.0.0',  # Optional for DKIM signing
+        ],
+    },
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+        "Framework :: Django",
+    ],
+    python_requires='>=3.6',
 )
