@@ -9,6 +9,7 @@ dist/
 build/
 env/
 .venv/
+test_env
 *.egg
 
 # Django

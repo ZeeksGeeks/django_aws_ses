@@ -1,139 +1,156 @@
-# Django AWS SES
+# django_aws_ses
 
-*(Badge to be activated upon PyPI release)*
-
-A Django email backend for sending emails via Amazon Simple Email Service (SES).
+A Django email backend for Amazon Simple Email Service (SES), featuring bounce and complaint handling, unsubscribe functionality, and robust integration with Django’s email system. Developed by ZeeksGeeks.
 
 ## Features
-
-- Send emails using AWS SES with optional DKIM signing.
-- Handle bounce, complaint, and delivery notifications via SNS webhooks.
-- Filter recipients based on bounce/complaint history and domain validation.
-- Admin dashboard for SES statistics and verified emails.
-- Secure unsubscribe functionality with confirmation step.
+- Seamless integration with Django’s email framework using a custom SES backend.
+- Handles AWS SES bounce and complaint notifications via SNS.
+- Secure, non-expiring unsubscribe links with GET vs. POST protection against accidental unsubscriptions.
+- Supports DKIM signing (optional, requires `dkimpy`).
+- Admin dashboard for SES statistics (superusers only).
 
 ## Installation
 
+Follow these steps to install and configure `django_aws_ses` in your Django project.
+
+### Prerequisites
+- Python 3.6 or higher
+- Django 3.2 or higher
+- An AWS account with SES access
+- Verified email address or domain in AWS SES
+
+### Step 1: Install the Package
+Install `django_aws_ses` from TestPyPI (or PyPI once published):
+
 ```bash
-pip install django_aws_ses
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ django_aws_ses
 ```
 
-## Requirements
+For production, this installs the core dependencies:
+- `django>=3.2`
+- `boto3>=1.18.0`
+- `requests>=2.26.0`
+- `cryptography>=3.4.7`
+- `dnspython>=2.1.0`
 
-- Python 3.8+
-- Django 3.2+
-- AWS SES account with verified domains/emails
+For development or testing, include development dependencies:
+```bash
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ django_aws_ses[dev]
+```
 
-## Quick Start
+For DKIM signing support (optional):
+```bash
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ django_aws_ses[dkim]
+```
 
-1. Install the package:
+### Step 2: Configure Django Settings
+Add `django_aws_ses` and required Django apps to `INSTALLED_APPS` in your `settings.py`:
 
-   ```bash
-   pip install django_aws_ses
-   ```
+```python
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'django.contrib.sites',
+    'django_aws_ses',
+]
 
-2. Add to `INSTALLED_APPS` in `settings.py`:
+SITE_ID = 1
+```
 
-   ```python
-   INSTALLED_APPS = [
-       ...
-       'django_aws_ses',
-   ]
-   ```
+Configure AWS SES credentials and the email backend:
 
-3. Configure AWS SES settings in `settings.py`:
+```python
+AWS_SES_ACCESS_KEY_ID = 'your-access-key-id'  # Replace with your AWS IAM credentials
+AWS_SES_SECRET_ACCESS_KEY = 'your-secret-access-key'
+AWS_SES_REGION_NAME = 'us-east-1'  # Adjust to your AWS SES region
+AWS_SES_REGION_ENDPOINT = 'email.us-east-1.amazonaws.com'
 
-   ```python
-   AWS_SES_ACCESS_KEY_ID = 'your-access-key'
-   AWS_SES_SECRET_ACCESS_KEY = 'your-secret-key'
-   AWS_SES_REGION_NAME = 'us-east-1'
-   AWS_SES_REGION_ENDPOINT = 'email.us-east-1.amazonaws.com'
-   EMAIL_BACKEND = 'django_aws_ses.backends.SESBackend'
-   ```
+EMAIL_BACKEND = 'django_aws_ses.backends.SESBackend'
+DEFAULT_FROM_EMAIL = 'no-reply@yourdomain.com'  # Verified in AWS SES
+```
 
-4. Apply migrations:
+Optional: Enable debugging logs for troubleshooting:
 
-   ```bash
-   python manage.py migrate
-   ```
+```python
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django_aws_ses': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
+```
 
-5. Test email sending:
+### Step 3: Set Up URLs
+Include the `django_aws_ses` URLs in your project’s `urls.py`:
 
-   ```python
-   from django.core.mail import send_mail
-   send_mail('Subject', 'Message', 'from@example.com', ['to@example.com'])
-   ```
+```python
+from django.urls import path, include
 
-## Advanced Setup
+urlpatterns = [
+    path('aws_ses/', include('django_aws_ses.urls', namespace='django_aws_ses')),
+]
+```
 
-### DKIM Signing (Optional)
+This enables endpoints for bounce/complaint handling (`/aws_ses/bounce/`) and unsubscribe functionality (`/aws_ses/unsubscribe/<uuid>/<token>/`).
 
-To enable DKIM for email authentication:
+### Step 4: Apply Migrations
+Run migrations to create the `django_aws_ses` models (e.g., `AwsSesSettings`, `BounceRecord`):
 
-1. Generate a DKIM key pair and configure in AWS SES.
-2. Add to `settings.py`:
+```bash
+python manage.py migrate
+```
 
-   ```python
-   DKIM_DOMAIN = 'example.com'
-   DKIM_PRIVATE_KEY = 'your-private-key'
-   DKIM_SELECTOR = 'ses'
-   ```
-
-### SNS Webhook for Notifications
-
-To handle bounces, complaints, and deliveries:
-
-1. Set up an SNS topic in AWS and subscribe the URL `your-domain.com/aws_ses/bounce/`.
-2. Ensure the view is publicly accessible and CSRF-exempt (configured by default).
-
-### Unsubscribe Functionality
-
-- Users receive a secure unsubscribe link (`/aws_ses/unsubscribe/<uuid>/<hash>/`).
-- A confirmation page prevents accidental unsubscribes (e.g., by email scanners).
-- Re-subscribe option available on the same page.
+### Step 5: Configure AWS SES
+- **Verify Email/Domain**: In the AWS SES console, verify your sender email (e.g., `no-reply@yourdomain.com`) or domain.
+- **SNS Notifications**: Set up an SNS topic to send bounce and complaint notifications to your `/aws_ses/bounce/` endpoint.
+- **Exit Sandbox Mode** (if needed): Request production access in AWS SES to send emails to unverified recipients.
+- **IAM Permissions**: Ensure your IAM user has permissions for SES (e.g., `AmazonSESFullAccess`) and SNS if using notifications.
 
 ## Usage
+Send an email using Django’s email API:
 
-- **Send Emails**: Use Django’s `send_mail` or `EmailMessage` as usual.
-- **View Statistics**: Access `/aws_ses/status/` (superuser only) for SES quotas and sending stats.
-- **Manage Unsubscribes**: Users can unsubscribe or re-subscribe via the secure link.
+```python
+from django.core.mail import send_mail
 
-## Development
+send_mail(
+    subject='Test Email',
+    message='This is a test email from django_aws_ses.',
+    from_email='no-reply@yourdomain.com',
+    recipient_list=['recipient@example.com'],
+    fail_silently=False,
+)
+```
 
-### Running Tests
+Generate an unsubscribe link for a user:
 
-1. Install test dependencies:
+```python
+from django_aws_ses.models import AwsSesUserAddon
 
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
+user = User.objects.get(email='recipient@example.com')
+addon = AwsSesUserAddon.objects.get(user=user)
+unsubscribe_url = addon.unsubscribe_url_generator()
+# Include unsubscribe_url in your email template
+```
 
-2. Run tests:
+View SES statistics (superusers only) at `/aws_ses/status/`.
 
-   ```bash
-   python manage.py test django_aws_ses
-   ```
-
-### Contributing
-
-1. Clone the repo:
-
-   ```bash
-   git clone https://git-vault.zeeksgeeks.com/zeeksgeeks/django_aws_ses
-   ```
-
-2. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Create a feature branch and submit a pull request.
+## Contributors
+Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for individual contributors and their roles.
 
 ## License
-
-MIT License. See [LICENSE](LICENSE) for details.
-
-## Credits
-
-Developed by Ray Jessop. Inspired by [django-ses](https://github.com/django-ses/django-ses).
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

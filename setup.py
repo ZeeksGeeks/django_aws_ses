@@ -5,13 +5,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="django_aws_ses",
-    version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    version="0.1.1",
+    author="ZeeksGeeks",
+    author_email="contact@zeeksgeeks.com",
     description="A Django email backend for Amazon SES with bounce and complaint handling",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/django_aws_ses",  # Update with your repo
+    url="https://git-vault.zeeksgeeks.com/public/django_aws_ses",  # Replace with your repo or website
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
