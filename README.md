@@ -302,6 +302,18 @@ For a detailed list of changes, improvements, and fixes across versions, see [CH
 
 Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for individual contributors and their roles.
 
+# Contributing to django_aws_ses
+
+We welcome contributions! Please follow these steps:
+
+1. Fork the repository: https://git-vault.zeeksgeeks.com/public/django_aws_ses
+2. Create a branch: `git checkout -b feature/your-feature`
+3. Commit changes: `git commit -m 'Add your feature'`
+4. Push: `git push origin feature/your-feature`
+5. Open a Pull Request.
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for current contributors.
+
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
