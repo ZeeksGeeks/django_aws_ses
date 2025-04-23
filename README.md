@@ -20,6 +20,13 @@ Follow these steps to install and configure `django_aws_ses` in your Django proj
 - Verified email address or domain in AWS SES
 
 ### Step 1: Install the Package
+
+Install `django_aws_ses`:
+
+```bash
+pip install django_aws_ses
+```
+
 Install `django_aws_ses` from TestPyPI (or PyPI once published):
 
 ```bash
@@ -33,11 +40,19 @@ For production, this installs the core dependencies:
 - `cryptography>=3.4.7`
 - `dnspython>=2.1.0`
 
+For development:
+```bash
+pip install django_aws_ses[dev]
+```
 For development or testing, include development dependencies:
 ```bash
 pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ django_aws_ses[dev]
 ```
 
+For DKIM signing support (optional):
+```bash
+pip install django_aws_ses[dkim]
+```
 For DKIM signing support (optional):
 ```bash
 pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ django_aws_ses[dkim]
@@ -67,7 +82,7 @@ Configure AWS SES credentials and the email backend:
 AWS_SES_ACCESS_KEY_ID = 'your-access-key-id'  # Replace with your AWS IAM credentials
 AWS_SES_SECRET_ACCESS_KEY = 'your-secret-access-key'
 AWS_SES_REGION_NAME = 'us-east-1'  # Adjust to your AWS SES region
-AWS_SES_REGION_ENDPOINT = 'email.us-east-1.amazonaws.com'
+AWS_SES_REGION_ENDPOINT = 'https://email.us-east-1.amazonaws.com'
 
 EMAIL_BACKEND = 'django_aws_ses.backends.SESBackend'
 DEFAULT_FROM_EMAIL = 'no-reply@yourdomain.com'  # Verified in AWS SES
@@ -106,7 +121,7 @@ urlpatterns = [
 ]
 ```
 
-This enables endpoints for bounce/complaint handling (`/aws_ses/bounce/`) and unsubscribe functionality (`/aws_ses/unsubscribe/<uuid>/<token>/`).
+This enables endpoints for bounce/complaint handling (`https://exampl.com/aws_ses/bounce/`) and unsubscribe functionality (`https://exampl.com/aws_ses/unsubscribe/<uuid>/<token>/`).
 
 ### Step 4: Apply Migrations
 Run migrations to create the `django_aws_ses` models (e.g., `AwsSesSettings`, `BounceRecord`):
@@ -117,9 +132,9 @@ python manage.py migrate
 
 ### Step 5: Configure AWS SES
 - **Verify Email/Domain**: In the AWS SES console, verify your sender email (e.g., `no-reply@yourdomain.com`) or domain.
-- **SNS Notifications**: Set up an SNS topic to send bounce and complaint notifications to your `/aws_ses/bounce/` endpoint.
+- **SNS Notifications**: Set up an SNS topic to send bounce and complaint notifications to your `https://exampl.com/aws_ses/bounce/` endpoint.
 - **Exit Sandbox Mode** (if needed): Request production access in AWS SES to send emails to unverified recipients.
-- **IAM Permissions**: Ensure your IAM user has permissions for SES (e.g., `AmazonSESFullAccess`) and SNS if using notifications.
+- **IAM Permissions**: Ensure your IAM user has permissions for SES and SNS (e.g., `AmazonSESFullAccess`).
 
 ## Usage
 Send an email using Django’s email API:
@@ -147,7 +162,7 @@ unsubscribe_url = addon.unsubscribe_url_generator()
 # Include unsubscribe_url in your email template
 ```
 
-View SES statistics (superusers only) at `/aws_ses/status/`.
+View SES statistics (superusers only) at `https://exampl.com/aws_ses/status/`.
 
 ## Contributors
 Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for individual contributors and their roles.
