@@ -4,19 +4,40 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## 0.1.3 - 2025-04-23
+
+### Added
+
+- `Contributing` section in `README.md` with guidelines for contributing to the project.
+- Full URLs for `CHANGELOG.md`, `CONTRIBUTORS.md`, and `LICENSE` in `README.md` to ensure PyPI compatibility.
+
+### Changed
+
+- Removed clickable table of contents links in `README.md` for reliable rendering on PyPI.
+- Updated `README.md` formatting to streamline structure and improve readability.
+
+### Notes
+
+- Prepared for PyPI release, validated on TestPyPI (`https://test.pypi.org/project/django-aws-ses`).
+
 ## 0.1.2 - 2025-04-22
 
 ### Added
 
 - `CHANGELOG.md` to document version history.
-- Clickable table of contents in `README.md` for improved navigation.
+- Table of contents in `README.md` for improved navigation.
 - Expanded `README.md` sections for AWS SES configuration and usage, with detailed instructions and AWS documentation links.
 - Note in `README.md` Usage section clarifying examples are in a Python console.
 
 ### Changed
 
 - Updated `README.md` to use `https://yourdomain.com` consistently for example URLs.
-- Improved `README.md` formatting for better rendering on PyPI.
+- Improved `README.md` formatting for better rendering on PyPI and TestPyPI.
+- Corrected model references in `README.md` to include `BounceRecord`, `ComplaintRecord`, `SendRecord`, and `AwsSesUserAddon`.
+
+### Notes
+
+- Validated on TestPyPI (`https://test.pypi.org/project/django-aws-ses`).
 
 ## 0.1.1 - 2025-04-22
 

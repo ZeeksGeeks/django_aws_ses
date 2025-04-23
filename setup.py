@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="django_aws_ses",
-    version="0.1.2",
+    version="0.1.3",
     author="ZeeksGeeks",
     author_email="contact@zeeksgeeks.com",
     description="A Django email backend for Amazon SES with bounce and complaint handling",

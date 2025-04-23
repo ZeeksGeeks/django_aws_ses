@@ -2,36 +2,13 @@
 
 A Django email backend for Amazon Simple Email Service (SES), featuring bounce and complaint handling, unsubscribe functionality, and robust integration with Django’s email system. Developed by ZeeksGeeks.
 
-## Table of Contents
-
-- [Features](#features)
-- [Installation](#installation)
-  - [Prerequisites](#prerequisites)
-  - [Step 1: Install the Package](#step-1-install-the-package)
-  - [Step 2: Configure Django Settings](#step-2-configure-django-settings)
-  - [Step 3: Set Up URLs](#step-3-set-up-urls)
-  - [Step 4: Apply Migrations](#step-4-apply-migrations)
-  - [Step 5: Configure AWS SES](#step-5-configure-aws-ses)
-- [Usage](#usage)
-  - [Sending a Basic Email](#sending-a-basic-email)
-  - [Sending HTML Emails](#sending-html-emails)
-  - [Handling Bounce and Complaint Notifications](#handling-bounce-and-complaint-notifications)
-  - [Generating Unsubscribe Links](#generating-unsubscribe-links)
-  - [Viewing SES Statistics](#viewing-ses-statistics)
-  - [Debugging and Error Handling](#debugging-and-error-handling)
-  - [Rate Limiting and Throttling](#rate-limiting-and-throttling)
-- [Changelog](#changelog)
-- [Contributors](#contributors)
-- [License](#license)
-- [PyPI Distribution](#pypi-distribution)
-
 ## Features
 
 - Seamless integration with Django’s email framework using a custom SES backend.
 - Handles AWS SES bounce and complaint notifications via SNS.
-- Secure unsubscribe functionality.
+- Secure unsubscribe functionality with non-expiring links and GET/POST protection.
 - Django Admin dashboard for SES statistics.
-- (Optional) Supports DKIM signing, requires `dkimpy`.
+- Optional DKIM signing support (requires `dkimpy`).
 
 ## Installation
 
@@ -141,7 +118,7 @@ This enables endpoints for bounce/complaint handling (`https://yourdomain.com/aw
 
 ### Step 4: Apply Migrations
 
-Run migrations to create the `django_aws_ses` models (e.g., `AwsSesSettings`, `BounceRecord`):
+Run migrations to create the `django_aws_ses` models (e.g., `AwsSesSettings`, `BounceRecord`, `ComplaintRecord`, `SendRecord`, `AwsSesUserAddon`):
 
 ```bash
 python manage.py migrate
@@ -186,7 +163,7 @@ Follow these detailed steps to set up Amazon SES in your AWS account for use wit
 
    - If using DKIM, enable it in SES:
      - In "Verified identities," select your domain and enable DKIM.
-     - Add provided DKIM DNS records to your DNS provider.
+     - Add provided DNS records to your DNS provider.
    - Ensure `dkimpy` is installed (`pip install django-aws-ses[dkim]`).
    - Docs: https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim.html
 
@@ -249,7 +226,7 @@ email.send()
 ### Handling Bounce and Complaint Notifications
 
 - Bounce and complaint notifications are processed via the SNS endpoint (`/aws_ses/bounce/`).
-- Records are stored in the `BounceRecord` model.
+- Records are stored in the `BounceRecord` and `ComplaintRecord` models.
 - View bounce/complaint data in the Django Admin or SES dashboard (`/aws_ses/status/`).
 - Configure additional SNS notifications for deliveries in SES console.
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-activity.html
@@ -270,11 +247,11 @@ unsubscribe_url = addon.unsubscribe_url_generator()
 - Users clicking the link are redirected to `/aws_ses/unsubscribe/<uuid>/<token>/`, which marks them as unsubscribed.
 - Customize the unsubscribe view or template in `django_aws_ses/templates/django_aws_ses/unsubscribe.html`.
 
-### Viewing SES Statistics Phelps
+### Viewing SES Statistics
 
 - Access the SES dashboard at `/aws_ses/status/` (superusers only).
 - Displays bounce rates, complaint rates, and email sending history.
-- Uses `BounceRecord` and SES API data for metrics.
+- Uses `BounceRecord`, `ComplaintRecord`, and `SendRecord` models for metrics.
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-metrics.html
 
 ### Debugging and Error Handling
@@ -284,7 +261,7 @@ unsubscribe_url = addon.unsubscribe_url_generator()
   - **Unverified email/domain**: Verify in SES console.
   - **IAM permissions**: Ensure `AmazonSESFullAccess` and `AmazonSNSFullAccess`.
   - **SNS endpoint errors**: Confirm HTTPS endpoint is publicly accessible.
-- Check `BounceRecord` in Django Admin for failed deliveries.
+- Check `BounceRecord` and `ComplaintRecord` in Django Admin for failed deliveries.
 
 ### Rate Limiting and Throttling
 
@@ -296,11 +273,12 @@ unsubscribe_url = addon.unsubscribe_url_generator()
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/manage-sending-limits.html
 
 ## Changelog
-For a detailed list of changes, improvements, and fixes across versions, see [CHANGELOG.md](CHANGELOG.md).
+
+For a detailed list of changes, improvements, and fixes across versions, see [CHANGELOG.md](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/CHANGELOG.md).
 
 ## Contributors
 
-Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for individual contributors and their roles.
+Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/CONTRIBUTORS.md) for individual contributors and their roles.
 
 # Contributing to django_aws_ses
 
@@ -312,11 +290,11 @@ We welcome contributions! Please follow these steps:
 4. Push: `git push origin feature/your-feature`
 5. Open a Pull Request.
 
-See [CONTRIBUTORS.md](CONTRIBUTORS.md) for current contributors.
+See [CONTRIBUTORS.md](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/CONTRIBUTING.md) for current contributors.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/LICENSE) for details.
 
 ## PyPI Distribution
 
@@ -324,3 +302,5 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 - Source: https://git-vault.zeeksgeeks.com/public/django_aws_ses
 - Issues: https://git-vault.zeeksgeeks.com/public/django_aws_ses/issues
 - PyPI: https://pypi.org/project/django-aws-ses/
+- TestPyPI: https://test.pypi.org/project/django-aws-ses/
+- Changelog: See [CHANGELOG.md](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/CHANGELOG.md) for version history.
