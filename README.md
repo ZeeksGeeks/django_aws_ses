@@ -4,34 +4,34 @@ A Django email backend for Amazon Simple Email Service (SES), featuring bounce a
 
 ## Table of Contents
 
-- Features
-- Installation
-  - Prerequisites
-  - Step 1: Install the Package
-  - Step 2: Configure Django Settings
-  - Step 3: Set Up URLs
-  - Step 4: Apply Migrations
-  - Step 5: Configure AWS SES
-- Usage
-  - Sending a Basic Email
-  - Sending HTML Emails
-  - Handling Bounce and Complaint Notifications
-  - Generating Unsubscribe Links
-  - Viewing SES Statistics
-  - Debugging and Error Handling
-  - Rate Limiting and Throttling
-- Changelog
-- Contributors
-- License
-- PyPI Distribution
+- [Features](#features)
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Step 1: Install the Package](#step-1-install-the-package)
+  - [Step 2: Configure Django Settings](#step-2-configure-django-settings)
+  - [Step 3: Set Up URLs](#step-3-set-up-urls)
+  - [Step 4: Apply Migrations](#step-4-apply-migrations)
+  - [Step 5: Configure AWS SES](#step-5-configure-aws-ses)
+- [Usage](#usage)
+  - [Sending a Basic Email](#sending-a-basic-email)
+  - [Sending HTML Emails](#sending-html-emails)
+  - [Handling Bounce and Complaint Notifications](#handling-bounce-and-complaint-notifications)
+  - [Generating Unsubscribe Links](#generating-unsubscribe-links)
+  - [Viewing SES Statistics](#viewing-ses-statistics)
+  - [Debugging and Error Handling](#debugging-and-error-handling)
+  - [Rate Limiting and Throttling](#rate-limiting-and-throttling)
+- [Changelog](#changelog)
+- [Contributors](#contributors)
+- [License](#license)
+- [PyPI Distribution](#pypi-distribution)
 
 ## Features
 
 - Seamless integration with Django’s email framework using a custom SES backend.
 - Handles AWS SES bounce and complaint notifications via SNS.
-- Secure unsubscribe functionality with non-expiring links and GET/POST protection.
-- Django Admin dashboard for SES statistics (superusers only).
-- Optional DKIM signing support (requires `dkimpy`).
+- Secure unsubscribe functionality.
+- Django Admin dashboard for SES statistics.
+- (Optional) Supports DKIM signing, requires `dkimpy`.
 
 ## Installation
 
@@ -141,7 +141,7 @@ This enables endpoints for bounce/complaint handling (`https://yourdomain.com/aw
 
 ### Step 4: Apply Migrations
 
-Run migrations to create the `django_aws_ses` models (e.g., `AwsSesSettings`, `BounceRecord`, `ComplaintRecord`, `SendRecord`, `AwsSesUserAddon`):
+Run migrations to create the `django_aws_ses` models (e.g., `AwsSesSettings`, `BounceRecord`):
 
 ```bash
 python manage.py migrate
@@ -249,7 +249,7 @@ email.send()
 ### Handling Bounce and Complaint Notifications
 
 - Bounce and complaint notifications are processed via the SNS endpoint (`/aws_ses/bounce/`).
-- Records are stored in the `BounceRecord` and `ComplaintRecord` models.
+- Records are stored in the `BounceRecord` model.
 - View bounce/complaint data in the Django Admin or SES dashboard (`/aws_ses/status/`).
 - Configure additional SNS notifications for deliveries in SES console.
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-activity.html
@@ -270,23 +270,21 @@ unsubscribe_url = addon.unsubscribe_url_generator()
 - Users clicking the link are redirected to `/aws_ses/unsubscribe/<uuid>/<token>/`, which marks them as unsubscribed.
 - Customize the unsubscribe view or template in `django_aws_ses/templates/django_aws_ses/unsubscribe.html`.
 
-### Viewing SES Statistics
+### Viewing SES Statistics Phelps
 
 - Access the SES dashboard at `/aws_ses/status/` (superusers only).
 - Displays bounce rates, complaint rates, and email sending history.
-- Uses `BounceRecord`, `ComplaintRecord`, and `SendRecord` models for metrics.
+- Uses `BounceRecord` and SES API data for metrics.
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-metrics.html
 
-### 
-
-System: Debugging and Error Handling
+### Debugging and Error Handling
 
 - Enable debug logging (see Step 2) to troubleshoot SES errors.
 - Common issues:
   - **Unverified email/domain**: Verify in SES console.
   - **IAM permissions**: Ensure `AmazonSESFullAccess` and `AmazonSNSFullAccess`.
   - **SNS endpoint errors**: Confirm HTTPS endpoint is publicly accessible.
-- Check `BounceRecord` and `ComplaintRecord` in Django Admin for failed deliveries.
+- Check `BounceRecord` in Django Admin for failed deliveries.
 
 ### Rate Limiting and Throttling
 
@@ -298,16 +296,15 @@ System: Debugging and Error Handling
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/manage-sending-limits.html
 
 ## Changelog
-
-For a detailed list of changes, improvements, and fixes across versions, see CHANGELOG.md.
+For a detailed list of changes, improvements, and fixes across versions, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributors
 
-Developed by the ZeeksGeeks team. See CONTRIBUTORS.md for individual contributors and their roles.
+Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for individual contributors and their roles.
 
 ## License
 
-This project is licensed under the MIT License. See LICENSE for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## PyPI Distribution
 
@@ -315,4 +312,3 @@ This project is licensed under the MIT License. See LICENSE for details.
 - Source: https://git-vault.zeeksgeeks.com/public/django_aws_ses
 - Issues: https://git-vault.zeeksgeeks.com/public/django_aws_ses/issues
 - PyPI: https://pypi.org/project/django-aws-ses/
-- Changelog: See CHANGELOG.md for version history.
