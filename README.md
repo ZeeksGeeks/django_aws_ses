@@ -5,9 +5,9 @@ A Django email backend for Amazon Simple Email Service (SES), featuring bounce a
 ## Features
 - Seamless integration with Django’s email framework using a custom SES backend.
 - Handles AWS SES bounce and complaint notifications via SNS.
-- Secure, non-expiring unsubscribe links with GET vs. POST protection against accidental unsubscriptions.
-- Supports DKIM signing (optional, requires `dkimpy`).
-- Admin dashboard for SES statistics (superusers only).
+- Secure, unsubscriptions.
+- Optional Supports DKIM signing, requires `dkimpy`.
+- Django Admin dashboard for SES statistics.
 
 ## Installation
 
