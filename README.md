@@ -2,6 +2,28 @@
 
 A Django email backend for Amazon Simple Email Service (SES), featuring bounce and complaint handling, unsubscribe functionality, and robust integration with Django’s email system. Developed by ZeeksGeeks.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+  - [Prerequisites](#prerequisites)
+  - [Step 1: Install the Package](#step-1-install-the-package)
+  - [Step 2: Configure Django Settings](#step-2-configure-django-settings)
+  - [Step 3: Set Up URLs](#step-3-set-up-urls)
+  - [Step 4: Apply Migrations](#step-4-apply-migrations)
+  - [Step 5: Configure AWS SES](#step-5-configure-aws-ses)
+- [Usage](#usage)
+  - [Sending a Basic Email](#sending-a-basic-email)
+  - [Sending HTML Emails](#sending-html-emails)
+  - [Handling Bounce and Complaint Notifications](#handling-bounce-and-complaint-notifications)
+  - [Generating Unsubscribe Links](#generating-unsubscribe-links)
+  - [Viewing SES Statistics](#viewing-ses-statistics52)
+  - [Debugging and Error Handling](#debugging-and-error-handling)
+  - [Rate Limiting and Throttling](#rate-limiting-and-throttling)
+- [Contributors](#contributors)
+- [License](#license)
+- [PyPI Distribution](#pypi-distribution)
+
 ## Features
 
 - Seamless integration with Django’s email framework using a custom SES backend.
