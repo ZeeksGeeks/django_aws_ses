@@ -4,11 +4,7 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-### Added
-- Planned features or improvements for the next release (e.g., enhanced DKIM support).
-
-## [0.1.0] - 2025-04-22
+## [0.1.0.1] - 2025-04-22
 ### Added
 - Comprehensive installation steps in `README.md`, covering PyPI, and dependency options (`dev`, `dkim`).
 - `CONTRIBUTORS.md` to acknowledge ZeeksGeeks team members and their roles.
@@ -33,6 +29,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Initial release tested with Django 3.2+ and Python 3.6+.
 - Successfully deployed to TestPyPI for validation.
 
-[Unreleased]: https://git-vault.zeeksgeeks.com/ZeeksGeeks/django_aws_ses/compare/0.1.1...HEAD
 [0.1.1]: https://git-vault.zeeksgeeks.com/ZeeksGeeks/django_aws_ses/compare/0.1.0...0.1.1
 [0.1.0]: https://git-vault.zeeksgeeks.com/ZeeksGeeks/django_aws_ses/releases/tag/0.1.0

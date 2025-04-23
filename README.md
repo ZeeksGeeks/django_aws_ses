@@ -20,6 +20,7 @@ A Django email backend for Amazon Simple Email Service (SES), featuring bounce a
   - [Viewing SES Statistics](#viewing-ses-statistics52)
   - [Debugging and Error Handling](#debugging-and-error-handling)
   - [Rate Limiting and Throttling](#rate-limiting-and-throttling)
+- [Changelog](#changelog)
 - [Contributors](#contributors)
 - [License](#license)
 - [PyPI Distribution](#pypi-distribution)
@@ -293,6 +294,9 @@ unsubscribe_url = addon.unsubscribe_url_generator()
   - Open a support case in AWS Support Center.
   - Specify desired sending rate and daily quota.
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/manage-sending-limits.html
+
+## Changelog
+For a detailed list of changes, improvements, and fixes across versions, see [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributors
 
