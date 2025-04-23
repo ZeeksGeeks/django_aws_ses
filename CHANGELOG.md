@@ -4,18 +4,17 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0.2] - 2025-04-22
+## [0.1.2] - 2025-04-22
 ### Added
-- Added CHANGELOG.md 
+- `CHANGELOG.md` to document version history.
 
-## [0.1.0.1] - 2025-04-22
+## [0.1.1] - 2025-04-22
 ### Added
 - Comprehensive installation steps in `README.md`, covering PyPI, and dependency options (`dev`, `dkim`).
 - `CONTRIBUTORS.md` to acknowledge ZeeksGeeks team members and their roles.
-- Changelog (`CHANGELOG.md`) to document version history.
 
 ### Changed
-- Updated `README.md` formatting for better rendering on TestPyPI/PyPI.
+- Updated `README.md` formatting for better rendering on PyPI.
 - Incremented version to `0.1.1` to reflect documentation improvements.
 
 ## [0.1.0] - 2025-04-15
