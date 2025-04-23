@@ -6,8 +6,8 @@ A Django email backend for Amazon Simple Email Service (SES), featuring bounce a
 
 - Seamless integration with Django’s email framework using a custom SES backend.
 - Handles AWS SES bounce and complaint notifications via SNS.
-- Secure unsubscribe functionality with non-expiring links and GET/POST protection.
-- Django Admin dashboard for SES statistics.
+- Secure unsubscribe functionality.
+- Django Admin dashboard for SES statistics (superusers only).
 - Optional DKIM signing support (requires `dkimpy`).
 
 ## Installation
@@ -223,6 +223,25 @@ email.attach_alternative(html_content, 'text/html')
 email.send()
 ```
 
+### Sending Email Attachments
+
+Send emails with attachments using `EmailMultiAlternatives`:
+
+```python
+from django.core.mail import EmailMultiAlternatives
+
+subject = 'Document from Our Platform'
+from_email = 'no-reply@yourdomain.com'
+to = 'recipient@example.com'
+text_content = 'Please find the attached document.'
+
+email = EmailMultiAlternatives(subject, text_content, from_email, [to])
+email.attach('document.pdf', open('path/to/document.pdf', 'rb').read(), 'application/pdf')
+email.send()
+```
+
+- **Note**: Amazon SES limits the total email size, including attachments, to 10MB. Ensure attachments are within this limit to avoid delivery failures.
+
 ### Handling Bounce and Complaint Notifications
 
 - Bounce and complaint notifications are processed via the SNS endpoint (`/aws_ses/bounce/`).
@@ -280,7 +299,7 @@ For a detailed list of changes, improvements, and fixes across versions, see [CH
 
 Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/CONTRIBUTORS.md) for individual contributors and their roles.
 
-# Contributing to django_aws_ses
+## Contributing
 
 We welcome contributions! Please follow these steps:
 
@@ -290,7 +309,7 @@ We welcome contributions! Please follow these steps:
 4. Push: `git push origin feature/your-feature`
 5. Open a Pull Request.
 
-See [CONTRIBUTORS.md](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/CONTRIBUTING.md) for current contributors.
+See [CONTRIBUTORS.md](https://git-vault.zeeksgeeks.com/public/django_aws_ses/src/branch/master/CONTRIBUTORS.md) for current contributors.
 
 ## License
 

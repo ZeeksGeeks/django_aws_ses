@@ -4,7 +4,17 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## 0.1.3 - 2025-04-23
+## \[0.1.4\] - 2025-04-23
+
+### Added
+
+- Note in `README.md` Usage section about sending email attachments with a 10MB size limit.
+
+### Notes
+
+- Prepared for PyPI release, building on TestPyPI validation (`https://test.pypi.org/project/django-aws-ses`).
+
+## \[0.1.3\] - 2025-04-23
 
 ### Added
 
@@ -18,9 +28,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Notes
 
-- Prepared for PyPI release, validated on TestPyPI (`https://test.pypi.org/project/django-aws-ses`).
+- Released on TestPyPI (`https://test.pypi.org/project/django-aws-ses`).
 
-## 0.1.2 - 2025-04-22
+## \[0.1.2\] - 2025-04-22
 
 ### Added
 
@@ -39,7 +49,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Validated on TestPyPI (`https://test.pypi.org/project/django-aws-ses`).
 
-## 0.1.1 - 2025-04-22
+## \[0.1.1\] - 2025-04-22
 
 ### Added
 
@@ -50,7 +60,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - Incremented version to `0.1.1` to reflect documentation improvements.
 
-## 0.1.0 - 2025-04-15
+## \[0.1.0\] - 2025-04-15
 
 ### Added
 
