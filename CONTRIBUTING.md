@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Django AWS SES! This guide outlin
 1. **Clone the Repository**:
 
    ```bash
-   git clone https://git-vault.zeeksgeeks.com/zeeksgeeks/django_aws_ses
+   git clone https://github.com/ZeeksGeeks/django_aws_ses
    cd django_aws_ses
    ```
 

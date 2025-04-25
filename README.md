@@ -293,11 +293,11 @@ unsubscribe_url = addon.unsubscribe_url_generator()
 
 ## Changelog
 
-For a detailed list of changes, improvements, and fixes across versions, see [CHANGELOG.md](https://github.com/zeeksgeeks/django_aws_ses/src/branch/master/CHANGELOG.md).
+For a detailed list of changes, improvements, and fixes across versions, see [CHANGELOG.md](https://github.com/zeeksgeeks/django_aws_ses/blob/master/CHANGELOG.md).
 
 ## Contributors
 
-Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](https://github.com/zeeksgeeks/django_aws_ses/src/branch/master/CONTRIBUTORS.md) for individual contributors and their roles.
+Developed by the ZeeksGeeks team. See [CONTRIBUTORS.md](https://github.com/zeeksgeeks/django_aws_ses/blob/master/CONTRIBUTORS.md) for individual contributors and their roles.
 
 ## Contributing
 
@@ -309,11 +309,11 @@ We welcome contributions! Please follow these steps:
 4. Push: `git push origin feature/your-feature`
 5. Open a Pull Request.
 
-See [CONTRIBUTORS.md](https://github.com/zeeksgeeks/django_aws_ses/src/branch/master/CONTRIBUTORS.md) for current contributors.
+See [CONTRIBUTORS.md](https://github.com/zeeksgeeks/django_aws_ses/blob/master/CONTRIBUTORS.md) for current contributors.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](https://github.com/zeeksgeeks/django_aws_ses/src/branch/master/LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](https://github.com/zeeksgeeks/django_aws_ses/blob/master/LICENSE) for details.
 
 ## PyPI Distribution
 
@@ -322,4 +322,4 @@ This project is licensed under the MIT License. See [LICENSE](https://github.com
 - Issues: https://github.com/zeeksgeeks/django_aws_ses/issues
 - PyPI: https://pypi.org/project/django-aws-ses/
 - TestPyPI: https://test.pypi.org/project/django-aws-ses/
-- Changelog: See [CHANGELOG.md](https://github.com/zeeksgeeks/django_aws_ses/src/branch/master/CHANGELOG.md) for version history.
+- Changelog: See [CHANGELOG.md](https://github.com/zeeksgeeks/django_aws_ses/blob/master/CHANGELOG.md) for version history.
