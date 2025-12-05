@@ -10,7 +10,6 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('sites', '0002_alter_domain_unique'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -41,21 +40,6 @@ class Migration(migrations.Migration):
                 'verbose_name': 'SES Statistic',
                 'verbose_name_plural': 'SES Statistics',
                 'ordering': ['-date'],
-            },
-        ),
-        migrations.CreateModel(
-            name='AwsSesSettings',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('access_key', models.CharField(blank=True, max_length=255, null=True)),
-                ('secret_key', models.CharField(blank=True, max_length=255, null=True)),
-                ('region_name', models.CharField(blank=True, max_length=255, null=True)),
-                ('region_endpoint', models.CharField(blank=True, max_length=255, null=True)),
-                ('site', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='awssessettings', to='sites.site')),
-            ],
-            options={
-                'verbose_name': 'AWS SES Settings',
-                'verbose_name_plural': 'AWS SES Settings',
             },
         ),
         migrations.CreateModel(
