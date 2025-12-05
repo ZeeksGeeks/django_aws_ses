@@ -4,6 +4,28 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## \[0.1.5\] - 2025-12-05
+
+### Added
+
+- Optional IAM role authentication for AWS SES backend.
+- IAM role configuration examples in documentation.
+
+### Changed
+
+- Updated SES backend to conditionally use credentials when provided.
+- Maintained backward compatibility with access key authentication.
+
+### Removed
+
+- `AwsSesSettings` model dependency.
+- `django.contrib.sites` framework dependency from installation requirements.
+
+### Breaking Changes
+
+- Removes `django.contrib.sites` dependency and `AwsSesSettings` model.
+
+
 ## \[0.1.4\] - 2025-04-23
 
 ### Added
@@ -70,7 +92,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Non-expiring unsubscribe links with GET vs. POST protection.
 - Optional DKIM signing support (requires `dkimpy`).
 - Admin dashboard for SES statistics (superusers only).
-- Models for `AwsSesSettings`, `BounceRecord`, `ComplaintRecord`, `SendRecord`, and `AwsSesUserAddon`.
+- Models for `BounceRecord`, `ComplaintRecord`, `SendRecord`, and `AwsSesUserAddon`.
 - Comprehensive test suite covering email sending, bounce/complaint handling, and unsubscribe functionality.
 
 ### Notes

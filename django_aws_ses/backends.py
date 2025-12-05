@@ -89,9 +89,6 @@ class SESBackend(BaseEmailBackend):
         self.dkim_selector = dkim_selector or settings.DKIM_SELECTOR
         self.dkim_headers = dkim_headers or settings.DKIM_HEADERS
 
-        if not (self._access_key_id and self._access_key):
-            raise ImproperlyConfigured("AWS SES credentials are required.")
-
         self.connection = None
 
     def open(self):
@@ -104,13 +101,21 @@ class SESBackend(BaseEmailBackend):
             return False
 
         try:
-            self.connection = boto3.client(
-                'ses',
-                aws_access_key_id=self._access_key_id,
-                aws_secret_access_key=self._access_key,
-                region_name=self._region_name,
-                endpoint_url=self._endpoint_url,
-            )
+            # Build client kwargs conditionally
+            client_kwargs = {
+                'service_name': 'ses',
+                'region_name': self._region_name,
+                'endpoint_url': self._endpoint_url,
+            }
+            
+            # Only add credentials if provided
+            if self._access_key_id and self._access_key:
+                client_kwargs.update({
+                    'aws_access_key_id': self._access_key_id,
+                    'aws_secret_access_key': self._access_key,
+                })
+
+            self.connection = boto3.client(**client_kwargs)
             return True
         except Exception as e:
             logger.error(f"Failed to connect to SES: {e}")

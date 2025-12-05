@@ -1,6 +1,5 @@
 from django.contrib import admin
 from .models import (
-    AwsSesSettings,
     SESStat,
     BounceRecord,
     AwsSesUserAddon,
@@ -25,23 +24,6 @@ class AdminEmailListFilter(admin.SimpleListFilter):
         if self.value():
             return queryset.filter(email__icontains=self.value())
         return queryset
-
-
-@admin.register(AwsSesSettings)
-class AwsSesSettingsAdmin(admin.ModelAdmin):
-    """Admin interface for AWS SES settings."""
-    model = AwsSesSettings
-    list_display = ('get_site', 'region_name')
-    list_display_links = ('get_site',)
-    search_fields = ('site__domain', 'region_name')
-
-    def get_site(self, obj):
-        """Display the domain of the associated site."""
-        return obj.site.domain
-
-    get_site.short_description = 'Domain'
-    get_site.admin_order_field = 'site__domain'
-
 
 @admin.register(AwsSesUserAddon)
 class AwsSesUserAddonAdmin(admin.ModelAdmin):

@@ -1,7 +1,6 @@
 from django.test import TestCase, RequestFactory, override_settings
 from django.core.mail import EmailMessage
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.urls import reverse
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
@@ -11,7 +10,7 @@ import json
 from .backends import SESBackend
 from .views import handle_bounce, HandleUnsubscribe
 from .utils import filter_recipients
-from .models import BounceRecord, ComplaintRecord, AwsSesUserAddon, AwsSesSettings
+from .models import BounceRecord, ComplaintRecord, AwsSesUserAddon
 
 User = get_user_model()
 
@@ -27,29 +26,7 @@ User = get_user_model()
 class DjangoAwsSesTests(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
-        # Use get_or_create to avoid duplicate Site creation
-        self.site, _ = Site.objects.get_or_create(
-            id=1, defaults={'domain': 'example.com', 'name': 'example.com'}
-        )
-        # Create AwsSesSettings for the Site
-        AwsSesSettings.objects.get_or_create(
-            site=self.site,
-            defaults={
-                'access_key': 'test-key',
-                'secret_key': 'test-secret',
-                'region_name': 'us-east-1',
-                'region_endpoint': 'email.us-east-1.amazonaws.com'
-            }
-        )
-        # Ensure AwsSesSettings exists
-        if not AwsSesSettings.objects.filter(site=self.site).exists():
-            AwsSesSettings.objects.create(
-                site=self.site,
-                access_key='test-key',
-                secret_key='test-secret',
-                region_name='us-east-1',
-                region_endpoint='email.us-east-1.amazonaws.com'
-            )
+
         # Create test user
         self.user = User.objects.create_user(
             username='testuser', email='test@example.com', password='testpass'

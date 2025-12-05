@@ -105,13 +105,19 @@ def dashboard(request):
     if cached_view:
         return cached_view
 
-    ses_conn = boto3.client(
-        'ses',
-        aws_access_key_id=settings.ACCESS_KEY,
-        aws_secret_access_key=settings.SECRET_KEY,
-        region_name=settings.AWS_SES_REGION_NAME,
-        endpoint_url=settings.AWS_SES_REGION_ENDPOINT,
-    )
+    client_kwargs = {
+        'service_name': 'ses',
+        'region_name': settings.AWS_SES_REGION_NAME,
+        'endpoint_url': settings.AWS_SES_REGION_ENDPOINT,
+    }
+    
+    if settings.ACCESS_KEY and settings.SECRET_KEY:
+        client_kwargs.update({
+            'aws_access_key_id': settings.ACCESS_KEY,
+            'aws_secret_access_key': settings.SECRET_KEY,
+        })
+    
+    ses_conn = boto3.client(**client_kwargs)
 
     try:
         quota_dict = ses_conn.get_send_quota()

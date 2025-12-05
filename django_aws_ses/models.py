@@ -4,7 +4,6 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.contrib.sites.models import Site
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -16,16 +15,6 @@ from django.core.signing import Signer, BadSignature
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-@receiver(post_save, sender=Site, dispatch_uid="update_awsses_settings")
-def update_awsses_settings(sender, instance, created, **kwargs):
-    """Create or update AwsSesSettings when a Site is saved."""
-    try:
-        if created:
-            AwsSesSettings.objects.create(site=instance)
-        instance.awssessettings.save()
-    except Exception as e:
-        logger.error(f"Failed to save AwsSesSettings for site {instance.id}: {e}")
-
 @receiver(post_save, sender=User, dispatch_uid="update_awsses_user")
 def update_awsses_user(sender, instance, created, **kwargs):
     """Create or update AwsSesUserAddon when a User is saved."""
@@ -35,21 +24,6 @@ def update_awsses_user(sender, instance, created, **kwargs):
         instance.aws_ses.save()
     except Exception as e:
         logger.error(f"Failed to save AwsSesUserAddon for user {instance.id}: {e}")
-
-class AwsSesSettings(models.Model):
-    """AWS SES configuration settings for a site."""
-    site = models.OneToOneField(Site, on_delete=models.CASCADE, related_name='awssessettings')
-    access_key = models.CharField(max_length=255, blank=True, null=True)
-    secret_key = models.CharField(max_length=255, blank=True, null=True)
-    region_name = models.CharField(max_length=255, blank=True, null=True)
-    region_endpoint = models.CharField(max_length=255, blank=True, null=True)
-
-    class Meta:
-        verbose_name = 'AWS SES Settings'
-        verbose_name_plural = 'AWS SES Settings'
-
-    def __str__(self):
-        return f"AWS SES Settings for {self.site.domain}"
 
 class AwsSesUserAddon(models.Model):
     """Additional AWS SES data for a user, including unsubscribe status."""

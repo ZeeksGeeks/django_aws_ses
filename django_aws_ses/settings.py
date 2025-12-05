@@ -2,11 +2,8 @@ import logging
 import os
 
 from django.conf import settings as django_settings
-from django.contrib.sites.models import Site
 from django.core.exceptions import ImproperlyConfigured
 from django.db.utils import DatabaseError
-
-from .models import AwsSesSettings
 
 # Default configuration values
 DEFAULTS = {
@@ -55,22 +52,6 @@ __all__ = (
     'logger',
 )
 
-
-def get_aws_ses_settings():
-    """Retrieve AwsSesSettings from the database for the current site.
-
-    Returns:
-        AwsSesSettings: The settings object, or None if not found.
-    """
-    if getattr(django_settings, 'TESTING', False):
-        return None  # Skip query during testing to avoid database errors
-    try:
-        return AwsSesSettings.objects.get(site_id=django_settings.SITE_ID)
-    except (AwsSesSettings.DoesNotExist, AttributeError, DatabaseError) as e:
-        logger.warning(f"Failed to retrieve AwsSesSettings: {e}")
-        return None
-
-
 def configure_logger(debug, log_file_path, formatter):
     """Configure the logger for the AWS SES app.
 
@@ -109,34 +90,17 @@ BASE_DIR = getattr(django_settings, 'BASE_DIR', None)
 if not BASE_DIR:
     raise ImproperlyConfigured("BASE_DIR must be defined in Django settings.")
 
-# Fetch AwsSesSettings from database
-aws_ses_settings = get_aws_ses_settings()
-
 # AWS Credentials
 if getattr(django_settings, 'TESTING', False):
     ACCESS_KEY = 'test-key'
     SECRET_KEY = 'test-secret'
 else:
-    ACCESS_KEY = aws_ses_settings.access_key if aws_ses_settings else getattr(
-        django_settings, 'AWS_SES_ACCESS_KEY_ID', getattr(django_settings, 'AWS_ACCESS_KEY_ID', None)
-    )
-    SECRET_KEY = aws_ses_settings.secret_key if aws_ses_settings else getattr(
-        django_settings, 'AWS_SES_SECRET_ACCESS_KEY', getattr(django_settings, 'AWS_SECRET_ACCESS_KEY', None)
-    )
-
-    if not (ACCESS_KEY and SECRET_KEY):
-        raise ImproperlyConfigured(
-            "AWS SES credentials (AWS_SES_ACCESS_KEY_ID and AWS_SES_SECRET_ACCESS_KEY) must be provided "
-            "via AwsSesSettings or Django settings."
-        )
+    ACCESS_KEY = getattr(django_settings, 'AWS_ACCESS_KEY_ID', None)
+    SECRET_KEY = getattr(django_settings, 'AWS_SECRET_ACCESS_KEY', None)
 
 # AWS SES Configuration
-AWS_SES_REGION_NAME = aws_ses_settings.region_name if aws_ses_settings else getattr(
-    django_settings, 'AWS_SES_REGION_NAME', DEFAULTS['AWS_SES_REGION_NAME']
-)
-AWS_SES_REGION_ENDPOINT = aws_ses_settings.region_endpoint if aws_ses_settings else getattr(
-    django_settings, 'AWS_SES_REGION_ENDPOINT', DEFAULTS['AWS_SES_REGION_ENDPOINT']
-)
+AWS_SES_REGION_NAME = getattr(django_settings, 'AWS_SES_REGION_NAME', DEFAULTS['AWS_SES_REGION_NAME'])
+AWS_SES_REGION_ENDPOINT = getattr(django_settings, 'AWS_SES_REGION_ENDPOINT', DEFAULTS['AWS_SES_REGION_ENDPOINT'])
 AWS_SES_AUTO_THROTTLE = getattr(django_settings, 'AWS_SES_AUTO_THROTTLE', DEFAULTS['AWS_SES_AUTO_THROTTLE'])
 AWS_SES_RETURN_PATH = getattr(django_settings, 'AWS_SES_RETURN_PATH', DEFAULTS['AWS_SES_RETURN_PATH'])
 AWS_SES_CONFIGURATION_SET = getattr(django_settings, 'AWS_SES_CONFIGURATION_SET', DEFAULTS['AWS_SES_CONFIGURATION_SET'])
@@ -148,15 +112,8 @@ DKIM_SELECTOR = getattr(django_settings, 'DKIM_SELECTOR', DEFAULTS['DKIM_SELECTO
 DKIM_HEADERS = getattr(django_settings, 'DKIM_HEADERS', DEFAULTS['DKIM_HEADERS'])
 
 # Email Settings
-try:
-    site = Site.objects.get_current()
-    DEFAULT_FROM_EMAIL = getattr(django_settings, 'DEFAULT_FROM_EMAIL', f"no-reply@{site.domain}")
-except Site.DoesNotExist:
-    DEFAULT_FROM_EMAIL = getattr(django_settings, 'DEFAULT_FROM_EMAIL', DEFAULTS['DEFAULT_FROM_EMAIL'])
-    logger.warning(
-        f"Django sites framework not configured. Using DEFAULT_FROM_EMAIL: {DEFAULT_FROM_EMAIL}. "
-        "Configure the Site model or set DEFAULT_FROM_EMAIL in settings."
-    )
+DEFAULT_FROM_EMAIL = getattr(django_settings, 'DEFAULT_FROM_EMAIL', DEFAULTS['DEFAULT_FROM_EMAIL'])
+
 
 # Other Settings
 HOME_URL = getattr(django_settings, 'HOME_URL', '/')

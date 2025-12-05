@@ -62,22 +62,23 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.sites',
-    'django_aws_ses',
 ]
 
-SITE_ID = 1
 ```
 
-Configure AWS SES credentials and the email backend:
-
+	Configure AWS SES credentials and the email backend:
+### Option 1: IAM Role (Recommended for AWS environments)
 ```python
-AWS_SES_ACCESS_KEY_ID = 'your-access-key-id'  # Replace with your AWS IAM credentials
-AWS_SES_SECRET_ACCESS_KEY = 'your-secret-access-key'
-AWS_SES_REGION_NAME = 'us-east-1'  # Adjust to your AWS SES region
+# No AWS credentials needed in settings
+AWS_SES_REGION_NAME = 'us-east-1'
 AWS_SES_REGION_ENDPOINT = 'https://email.us-east-1.amazonaws.com'
-
 EMAIL_BACKEND = 'django_aws_ses.backends.SESBackend'
-DEFAULT_FROM_EMAIL = 'no-reply@yourdomain.com'  # Verified in AWS SES
+DEFAULT_FROM_EMAIL = 'no-reply@yourdomain.com'
+```
+### Option 2: Access Keys
+```
+AWS_SES_ACCESS_KEY_ID = 'your-access-key-id'
+AWS_SES_SECRET_ACCESS_KEY = 'your-secret-access-key'
 ```
 
 Optional: Enable debugging logs for troubleshooting:
@@ -118,7 +119,7 @@ This enables endpoints for bounce/complaint handling (`https://yourdomain.com/aw
 
 ### Step 4: Apply Migrations
 
-Run migrations to create the `django_aws_ses` models (e.g., `AwsSesSettings`, `BounceRecord`, `ComplaintRecord`, `SendRecord`, `AwsSesUserAddon`):
+Run migrations to create the `django_aws_ses` models (e.g., `BounceRecord`, `ComplaintRecord`, `SendRecord`, `AwsSesUserAddon`):
 
 ```bash
 python manage.py migrate
