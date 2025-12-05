@@ -1,4 +1,4 @@
-django>=3.2 
+django>=4.2.27 
 boto3>=1.18 
 requests>=2.25 
 cryptography>=3.4 
@@ -7,3 +7,4 @@ pytz>=2021.1
 
 #Optional DKIM dependency (uncomment if needed)
 #dkimpy>=1.0
+sqlparse>=0.5.4 # not directly required, pinned by Snyk to avoid a vulnerability
