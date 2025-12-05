@@ -8,15 +8,8 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.SeparateDatabaseAndState(
-            state_operations=[
-                migrations.DeleteModel(name='AwsSesSettings'),
-            ],
-            database_operations=[
-                migrations.RunSQL(
-                    "DROP TABLE IF EXISTS django_aws_ses_awssessettings;",
-                    reverse_sql=migrations.RunSQL.noop,
-                ),
-            ],
+        migrations.RunSQL(
+            "DROP TABLE IF EXISTS django_aws_ses_awssessettings;",
+            reverse_sql=migrations.RunSQL.noop,
         ),
     ]
