@@ -4,16 +4,25 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## \[0.1.5\] - 2026-04-28
+## \[0.1.6\] - 2026-04-28
+
+### Added
+
+- `EmailUnsubscribe` model for tracking unsubscribe state for bare email addresses not linked to a `User` account — enables mailing-list style sends where recipients may not yet have accounts.
+- `HandleEmailUnsubscribe` view — GET/POST handler for email-only unsubscribe flows using a URL-safe base64-encoded email and a `Signer`-signed self-authenticating token (no session or login required).
+- URL pattern `unsubscribe/email/<encoded_email>/<token>/` named `aws_ses_email_unsubscribe`.
+- Migration `0003_emailunsubscribe` creating the `django_aws_ses_emailunsubscribe` table.
+
+### Notes
+
+- Run `python manage.py migrate django_aws_ses` after upgrading.
+
+## \[0.1.5\] - 2025-12-05
 
 ### Added
 
 - Optional IAM role authentication for AWS SES backend.
 - IAM role configuration examples in documentation.
-- `EmailUnsubscribe` model for tracking unsubscribe state for bare email addresses not linked to a `User` account — enables mailing-list style sends where recipients may not yet have accounts.
-- `HandleEmailUnsubscribe` view — GET/POST handler for email-only unsubscribe flows using a URL-safe base64-encoded email and a `Signer`-signed self-authenticating token (no session or login required).
-- URL pattern `unsubscribe/email/<encoded_email>/<token>/` named `aws_ses_email_unsubscribe`.
-- Migration `0003_emailunsubscribe` creating the `django_aws_ses_emailunsubscribe` table.
 
 ### Changed
 
