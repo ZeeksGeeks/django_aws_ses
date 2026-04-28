@@ -164,6 +164,40 @@ class UnknownRecord(models.Model):
     def __str__(self):
         return f"Unknown Event: {self.event_type} ({self.timestamp})"
 
+class EmailUnsubscribe(models.Model):
+    """Unsubscribe record for non-user email addresses (e.g. mailing list signups)."""
+    email = models.EmailField(unique=True, db_index=True)
+    unsubscribed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Email Unsubscribe'
+        verbose_name_plural = 'Email Unsubscribes'
+
+    def __str__(self):
+        return f"{'Unsubscribed' if self.unsubscribed else 'Subscribed'}: {self.email}"
+
+    def generate_token(self):
+        """Generate a signed token for unsubscribe verification."""
+        return Signer().sign(self.email)
+
+    def verify_token(self, token):
+        """Verify a signed unsubscribe token."""
+        try:
+            return Signer().unsign(token) == self.email
+        except BadSignature:
+            return False
+
+    def unsubscribe_url_generator(self):
+        """Generate a secure unsubscribe URL with a signed token."""
+        encoded_email = urlsafe_base64_encode(self.email.encode())
+        token = self.generate_token()
+        return reverse(
+            'django_aws_ses:aws_ses_email_unsubscribe',
+            kwargs={'encoded_email': encoded_email, 'token': token},
+        )
+
+
 class BlackListedDomains(models.Model):
     """Domains blacklisted for email sending."""
     domain = models.CharField(max_length=255, unique=True, db_index=True)

@@ -18,7 +18,7 @@ from django.core.signing import Signer, BadSignature
 from . import settings
 from . import signals
 from . import utils
-from .models import BounceRecord, ComplaintRecord, SendRecord, UnknownRecord, AwsSesUserAddon
+from .models import BounceRecord, ComplaintRecord, SendRecord, UnknownRecord, AwsSesUserAddon, EmailUnsubscribe
 
 logger = settings.logger
 User = get_user_model()
@@ -375,4 +375,68 @@ class HandleUnsubscribe(TemplateView):
             logger.warning(f"Invalid action for user: {user.email}")
             return redirect(settings.HOME_URL)
 
+        return render(request, self.template_name, self.get_context_data())
+
+
+class HandleEmailUnsubscribe(TemplateView):
+    """View to handle unsubscribe for non-user email addresses."""
+    http_method_names = ['get', 'post']
+    template_name = settings.UNSUBSCRIBE_TEMPLATE
+    base_template_name = settings.BASE_TEMPLATE
+    confirmation_message = "Please confirm your email subscription preference"
+    unsubscribe_message = "You have been unsubscribed"
+    resubscribe_message = "You have been re-subscribed"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['base_template_name'] = self.base_template_name
+        context['confirmation_message'] = self.confirmation_message
+        context['unsubscribe_message'] = self.unsubscribe_message
+        context['resubscribe_message'] = self.resubscribe_message
+        context['user_email'] = getattr(self, 'user_email', '')
+        context['action'] = getattr(self, 'action', '')
+        return context
+
+    def _get_record(self, encoded_email, token):
+        """Decode email, fetch EmailUnsubscribe record, verify token."""
+        try:
+            email = force_str(urlsafe_base64_decode(encoded_email))
+            record = EmailUnsubscribe.objects.get(email=email)
+        except (TypeError, ValueError, OverflowError, EmailUnsubscribe.DoesNotExist) as e:
+            logger.warning(f"Invalid email unsubscribe request: {e}")
+            return None
+        if not record.verify_token(token):
+            logger.warning(f"Invalid unsubscribe token for email: {email}")
+            return None
+        return record
+
+    def get(self, request, *args, **kwargs):
+        """Show confirmation page."""
+        self.action = ''
+        record = self._get_record(self.kwargs['encoded_email'], self.kwargs['token'])
+        if not record:
+            return redirect(settings.HOME_URL)
+        self.user_email = record.email
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        """Process unsubscribe or re-subscribe."""
+        action = request.POST.get('action')
+        record = self._get_record(self.kwargs['encoded_email'], self.kwargs['token'])
+        if not record:
+            return redirect(settings.HOME_URL)
+        self.user_email = record.email
+        if action == 'unsubscribe':
+            record.unsubscribed = True
+            record.save()
+            logger.info(f"Unsubscribed email: {record.email}")
+            self.action = 'unsubscribe'
+        elif action == 'resubscribe':
+            record.unsubscribed = False
+            record.save()
+            logger.info(f"Re-subscribed email: {record.email}")
+            self.action = 'resubscribe'
+        else:
+            logger.warning(f"Invalid unsubscribe action for email: {record.email}")
+            return redirect(settings.HOME_URL)
         return render(request, self.template_name, self.get_context_data())

@@ -115,7 +115,7 @@ urlpatterns = [
 ]
 ```
 
-This enables endpoints for bounce/complaint handling (`https://yourdomain.com/aws_ses/bounce/`) and unsubscribe functionality (`https://yourdomain.com/aws_ses/unsubscribe/<uuid>/<token>/`).
+This enables endpoints for bounce/complaint handling (`https://yourdomain.com/aws_ses/bounce/`), user-based unsubscribe (`https://yourdomain.com/aws_ses/unsubscribe/<uuid>/<token>/`), and email-only unsubscribe (`https://yourdomain.com/aws_ses/unsubscribe/email/<encoded_email>/<token>/`).
 
 ### Step 4: Apply Migrations
 
@@ -266,6 +266,35 @@ unsubscribe_url = addon.unsubscribe_url_generator()
 
 - Users clicking the link are redirected to `/aws_ses/unsubscribe/<uuid>/<token>/`, which marks them as unsubscribed.
 - Customize the unsubscribe view or template in `django_aws_ses/templates/django_aws_ses/unsubscribe.html`.
+
+### Generating Unsubscribe Links for Non-User Emails
+
+For mailing lists or launch notifications where recipients may not have accounts, use `EmailUnsubscribe`:
+
+```python
+from django_aws_ses.models import EmailUnsubscribe
+
+emails = ['recipient@example.com', 'other@example.com']
+
+# Bulk get-or-create unsubscribe records
+existing = {u.email: u for u in EmailUnsubscribe.objects.filter(email__in=emails)}
+to_create = [EmailUnsubscribe(email=e) for e in emails if e not in existing]
+if to_create:
+    EmailUnsubscribe.objects.bulk_create(to_create, ignore_conflicts=True)
+    all_unsubs = {u.email: u for u in EmailUnsubscribe.objects.filter(email__in=emails)}
+else:
+    all_unsubs = existing
+
+for email in emails:
+    unsub = all_unsubs.get(email)
+    if unsub and unsub.unsubscribed:
+        continue
+    unsubscribe_url = unsub.unsubscribe_url_generator()
+    # append unsubscribe_url to the email body before sending
+```
+
+- Links point to `/aws_ses/unsubscribe/email/<encoded_email>/<token>/` and are self-authenticating — no session or login required.
+- Run `python manage.py migrate django_aws_ses` after upgrading to create the `EmailUnsubscribe` table.
 
 ### Viewing SES Statistics
 

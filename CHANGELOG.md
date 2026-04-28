@@ -4,12 +4,16 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## \[0.1.5\] - 2025-12-05
+## \[0.1.5\] - 2026-04-28
 
 ### Added
 
 - Optional IAM role authentication for AWS SES backend.
 - IAM role configuration examples in documentation.
+- `EmailUnsubscribe` model for tracking unsubscribe state for bare email addresses not linked to a `User` account — enables mailing-list style sends where recipients may not yet have accounts.
+- `HandleEmailUnsubscribe` view — GET/POST handler for email-only unsubscribe flows using a URL-safe base64-encoded email and a `Signer`-signed self-authenticating token (no session or login required).
+- URL pattern `unsubscribe/email/<encoded_email>/<token>/` named `aws_ses_email_unsubscribe`.
+- Migration `0003_emailunsubscribe` creating the `django_aws_ses_emailunsubscribe` table.
 
 ### Changed
 
@@ -18,12 +22,12 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Removed
 
-- `AwsSesSettings` model dependency.
-- `django.contrib.sites` framework dependency from installation requirements.
+- `AwsSesSettings` model and `django.contrib.sites` framework dependency.
 
 ### Breaking Changes
 
-- Removes `django.contrib.sites` dependency and `AwsSesSettings` model.
+- `AwsSesSettings` model removed. Run `python manage.py migrate django_aws_ses` after upgrading.
+- `django.contrib.sites` is no longer required.
 
 
 ## \[0.1.4\] - 2025-04-23
