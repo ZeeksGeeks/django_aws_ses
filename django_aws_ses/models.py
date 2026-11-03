@@ -1,16 +1,9 @@
-import hashlib
-import hmac
 import logging
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import models
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from django.urls import reverse
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
-from django.core.signing import Signer, BadSignature
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -43,13 +36,18 @@ class AwsSesUserAddon(models.Model):
         return getattr(self.user, email_field, '') or ''
 
     def generate_unsubscribe_token(self):
-        """Generate a signed token for unsubscribe verification."""
-        signer = Signer()
-        value = f"{self.user.pk}:{self.get_email()}"
-        return signer.sign(value)
+        """Generate a signed token for unsubscribe verification.
+
+        The token carries only the user's primary key, never the email address.
+        """
+        from . import unsubscribe
+        return unsubscribe.make_token(unsubscribe.KIND_USER, self.user.pk)
 
     def verify_unsubscribe_token(self, token):
         """Verify a signed unsubscribe token.
+
+        Accepts the current format and, unless AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS
+        is False, the "<pk>:<email>" format issued by django_aws_ses <= 0.1.6.
 
         Args:
             token (str): The signed token to verify.
@@ -57,19 +55,29 @@ class AwsSesUserAddon(models.Model):
         Returns:
             bool: True if the token is valid, False otherwise.
         """
-        signer = Signer()
-        try:
-            value = signer.unsign(token)
-            pk, email = value.split(':')
-            return str(self.user.pk) == pk and self.get_email() == email
-        except BadSignature:
+        from . import unsubscribe
+        loaded = unsubscribe.load_token(token)
+        if loaded:
+            return loaded == (unsubscribe.KIND_USER, str(self.user.pk))
+        legacy = unsubscribe.load_legacy_token(token)
+        if not legacy:
             return False
+        kind, pk, email = legacy
+        return kind == unsubscribe.KIND_USER and str(self.user.pk) == pk and self.get_email() == email
 
     def unsubscribe_url_generator(self):
-        """Generate a secure unsubscribe URL with a signed token."""
-        uuid = urlsafe_base64_encode(str(self.user.pk).encode())
-        token = self.generate_unsubscribe_token()
-        return reverse('django_aws_ses:aws_ses_unsubscribe', kwargs={"uuid": uuid, "token": token})
+        """Generate a secure unsubscribe URL with a signed token.
+
+        Returns AWS_SES_UNSUBSCRIBE_URL when configured, otherwise the library's
+        token confirmation page (relative path).
+        """
+        from . import unsubscribe
+        return unsubscribe.build_unsubscribe_url(self.generate_unsubscribe_token())
+
+    def list_unsubscribe_headers(self):
+        """Return RFC 8058 List-Unsubscribe / List-Unsubscribe-Post headers for this user."""
+        from . import unsubscribe
+        return unsubscribe.list_unsubscribe_headers(self)
 
 class SESStat(models.Model):
     """Daily statistics for AWS SES email sending."""
@@ -178,24 +186,39 @@ class EmailUnsubscribe(models.Model):
         return f"{'Unsubscribed' if self.unsubscribed else 'Subscribed'}: {self.email}"
 
     def generate_token(self):
-        """Generate a signed token for unsubscribe verification."""
-        return Signer().sign(self.email)
+        """Generate a signed token for unsubscribe verification.
+
+        The token carries only this record's primary key, never the email address.
+        """
+        from . import unsubscribe
+        return unsubscribe.make_token(unsubscribe.KIND_EMAIL, self.pk)
 
     def verify_token(self, token):
-        """Verify a signed unsubscribe token."""
-        try:
-            return Signer().unsign(token) == self.email
-        except BadSignature:
-            return False
+        """Verify a signed unsubscribe token.
+
+        Accepts the current format and, unless AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS
+        is False, the signed-email format issued by django_aws_ses <= 0.1.6.
+        """
+        from . import unsubscribe
+        loaded = unsubscribe.load_token(token)
+        if loaded:
+            return loaded == (unsubscribe.KIND_EMAIL, str(self.pk))
+        legacy = unsubscribe.load_legacy_token(token)
+        return bool(legacy) and legacy[0] == unsubscribe.KIND_EMAIL and legacy[2] == self.email
 
     def unsubscribe_url_generator(self):
-        """Generate a secure unsubscribe URL with a signed token."""
-        encoded_email = urlsafe_base64_encode(self.email.encode())
-        token = self.generate_token()
-        return reverse(
-            'django_aws_ses:aws_ses_email_unsubscribe',
-            kwargs={'encoded_email': encoded_email, 'token': token},
-        )
+        """Generate a secure unsubscribe URL with a signed token.
+
+        Returns AWS_SES_UNSUBSCRIBE_URL when configured, otherwise the library's
+        token confirmation page (relative path). The address is not in the URL.
+        """
+        from . import unsubscribe
+        return unsubscribe.build_unsubscribe_url(self.generate_token())
+
+    def list_unsubscribe_headers(self):
+        """Return RFC 8058 List-Unsubscribe / List-Unsubscribe-Post headers for this address."""
+        from . import unsubscribe
+        return unsubscribe.list_unsubscribe_headers(self)
 
 
 class BlackListedDomains(models.Model):

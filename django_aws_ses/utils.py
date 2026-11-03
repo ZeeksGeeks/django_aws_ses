@@ -1,18 +1,18 @@
 import base64
 import re
 import dns.resolver
+from email.utils import parseaddr
 from io import StringIO
 from urllib.parse import urlparse
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.encoding import smart_str
 from django.dispatch.dispatcher import receiver
 from django.db.models import Count
+from django.db.models.functions import Lower
 from django.contrib.auth import get_user_model
-from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
-import requests
 
 from . import settings
 from . import signals
@@ -21,13 +21,45 @@ from .models import (
     ComplaintRecord,
     BlackListedDomains,
     SendRecord,
+    EmailUnsubscribe,
 )
 
-from django.contrib.auth import get_user_model
 User = get_user_model()
 
 # Logger setup
 logger = settings.logger
+
+# Marks a message as transactional (password reset, verification code, ...): the
+# unsubscribe filter is skipped for it. The header is stripped before sending.
+# Setting ``message.aws_ses_transactional = True`` has the same effect.
+TRANSACTIONAL_HEADER = 'X-Django-AWS-SES-Transactional'
+
+
+def normalize_address(address):
+    """
+    Returns the bare, lower-cased address from a recipient string.
+    "Name <User@Example.com>" -> "user@example.com".
+    """
+    if not address:
+        return ''
+    return parseaddr(str(address))[1].strip().lower()
+
+
+def _normalized_addresses(recipiant_list):
+    return {a for a in (normalize_address(e) for e in recipiant_list) if a}
+
+
+def is_transactional(message):
+    """
+    Returns True if a message opted out of the unsubscribe filter, via the
+    ``aws_ses_transactional`` attribute or the TRANSACTIONAL_HEADER header.
+    """
+    if getattr(message, 'aws_ses_transactional', False):
+        return True
+    for name, value in (getattr(message, 'extra_headers', None) or {}).items():
+        if name.lower() == TRANSACTIONAL_HEADER.lower():
+            return str(value).strip().lower() not in ('', '0', 'false', 'no')
+    return False
 
 class BounceMessageVerifier(object):
     """
@@ -219,9 +251,11 @@ def receiver_email_post_send(sender, message=None, **kwargs):
         logger.info(f"Email sent successfully to {message.recipients()}")
         # Add custom logic here
 
-def filter_recipients(recipiant_list):
+def filter_recipients(recipiant_list, skip_unsubscribe=False):
     """
     Filters a list of recipient email addresses to exclude invalid or blacklisted emails.
+    skip_unsubscribe=True (transactional messages) skips only the unsubscribe filter;
+    complaint, bounce and domain filters still apply.
     """
     logger.info("Starting filter_recipients: %s", recipiant_list)
 
@@ -231,7 +265,10 @@ def filter_recipients(recipiant_list):
         recipiant_list = [recipiant_list]
 
     if recipiant_list:
-        recipiant_list = filter_recipients_with_unsubscribe(recipiant_list)
+        if skip_unsubscribe:
+            logger.info("Transactional message: skipping unsubscribe filter")
+        else:
+            recipiant_list = filter_recipients_with_unsubscribe(recipiant_list)
         recipiant_list = filter_recipients_with_complaint_records(recipiant_list)
         recipiant_list = filter_recipients_with_bounce_records(recipiant_list)
         recipiant_list = filter_recipients_with_validater_email_domain(recipiant_list)
@@ -241,38 +278,75 @@ def filter_recipients(recipiant_list):
 
 def filter_recipients_with_unsubscribe(recipiant_list):
     """
-    Removes recipients who have unsubscribed.
+    Removes recipients who have unsubscribed (case-insensitive). EmailUnsubscribe
+    records are also checked when AWS_SES_FILTER_EMAIL_UNSUBSCRIBES is True, and
+    always when AWS_SES_AUTO_LIST_UNSUBSCRIBE is True: the backend issues one-click
+    headers for EmailUnsubscribe records, so it must honour them.
     """
-    blacklist_emails = list(set([record.email for record in User.objects.filter(aws_ses__unsubscribe=True)]))
+    normalized = _normalized_addresses(recipiant_list)
+    email_field = User.get_email_field_name()
+    blacklist_emails = set(
+        User.objects.annotate(aws_ses_addr=Lower(email_field))
+        .filter(aws_ses__unsubscribe=True, aws_ses_addr__in=normalized)
+        .values_list('aws_ses_addr', flat=True)
+    )
+    if settings.AWS_SES_FILTER_EMAIL_UNSUBSCRIBES or settings.AWS_SES_AUTO_LIST_UNSUBSCRIBE:
+        blacklist_emails.update(
+            EmailUnsubscribe.objects.annotate(aws_ses_addr=Lower('email'))
+            .filter(unsubscribed=True, aws_ses_addr__in=normalized)
+            .values_list('aws_ses_addr', flat=True)
+        )
+    if blacklist_emails:
+        logger.info("Removing unsubscribed recipients: %s", sorted(blacklist_emails))
     return filter_recipients_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
 
 def filter_recipients_with_complaint_records(recipiant_list):
     """
-    Removes recipients with complaint records.
+    Removes recipients with complaint records (case-insensitive).
     """
-    blacklist_emails = list(set([record.email for record in ComplaintRecord.objects.filter(email__isnull=False)]))
+    normalized = _normalized_addresses(recipiant_list)
+    blacklist_emails = set(
+        ComplaintRecord.objects.annotate(aws_ses_addr=Lower('email'))
+        .filter(aws_ses_addr__in=normalized)
+        .values_list('aws_ses_addr', flat=True)
+    )
     return filter_recipients_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
 
 def filter_recipients_with_bounce_records(recipiant_list):
     """
     Removes recipients with bounce records exceeding SES_BOUNCE_LIMIT.
+    Bounces are counted per address (case-insensitive).
     """
-    blacklist_emails = list(set([record.email for record in BounceRecord.objects.filter(email__isnull=False)
-                                .annotate(total=Count('email')).filter(total__gte=settings.SES_BOUNCE_LIMIT)]))
+    normalized = _normalized_addresses(recipiant_list)
+    blacklist_emails = set(
+        BounceRecord.objects.annotate(aws_ses_addr=Lower('email'))
+        .filter(aws_ses_addr__in=normalized)
+        .values('aws_ses_addr')
+        .annotate(total=Count('id'))
+        .filter(total__gte=settings.SES_BOUNCE_LIMIT)
+        .values_list('aws_ses_addr', flat=True)
+    )
     return filter_recipients_with_blacklist(recipiant_list, blacklist_emails) if blacklist_emails else recipiant_list
 
 def filter_recipients_with_blacklist(recipiant_list, blacklist_emails):
     """
-    Filters out emails from a blacklist.
+    Filters out emails from a blacklist. Comparison ignores case and display names;
+    the recipient strings that remain are returned unchanged.
     """
-    return [email for email in recipiant_list if email not in blacklist_emails]
+    blacklist = {normalize_address(e) for e in blacklist_emails}
+    return [email for email in recipiant_list if normalize_address(email) not in blacklist]
 
 def filter_recipients_with_validater_email_domain(recipiant_list):
     """
     Validates email domains for new recipients.
     """
-    sent_list = list(set([e.destination for e in SendRecord.objects.filter(destination__in=recipiant_list).distinct()]))
-    test_list = [e for e in recipiant_list if e not in sent_list]
+    normalized = _normalized_addresses(recipiant_list)
+    sent_list = set(
+        SendRecord.objects.annotate(aws_ses_addr=Lower('destination'))
+        .filter(aws_ses_addr__in=normalized)
+        .values_list('aws_ses_addr', flat=True)
+    )
+    test_list = [e for e in recipiant_list if normalize_address(e) not in sent_list]
 
     for e in test_list:
         if not validater_email_domain(e):
@@ -283,12 +357,14 @@ def filter_recipients_with_validater_email_domain(recipiant_list):
 def validater_email_domain(email):
     """
     Checks if an email's domain has valid MX records and is not blacklisted.
+    Accepts "Name <user@example.com>" recipient strings.
     """
+    email = normalize_address(email)
     if email.find("@") < 1:
         return False
     domain = email.split("@")[-1]
 
-    if BlackListedDomains.objects.filter(domain=domain).exists():
+    if BlackListedDomains.objects.filter(domain__iexact=domain).exists():
         return False
 
     try:
@@ -311,8 +387,8 @@ def validate_email(email):
     """
     if not emailIsValid(email):
         return False
-    if BounceRecord.objects.filter(email=email).count() >= settings.SES_BOUNCE_LIMIT:
+    if BounceRecord.objects.filter(email__iexact=email).count() >= settings.SES_BOUNCE_LIMIT:
         return False
-    if ComplaintRecord.objects.filter(email=email).exists():
+    if ComplaintRecord.objects.filter(email__iexact=email).exists():
         return False
     return validater_email_domain(email)

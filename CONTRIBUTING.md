@@ -45,11 +45,15 @@ Thank you for your interest in contributing to Django AWS SES! This guide outlin
    pip install -r requirements-dev.txt
    ```
 
-2. Run the test suite:
+2. Run the test suite (no host project needed):
 
    ```bash
-   python manage.py test django_aws_ses
+   python runtests.py
+   python runtests.py django_aws_ses.tests.OneClickUnsubscribeTests   # one class
    ```
+
+   Or, inside a host project that has `django_aws_ses` installed: `python manage.py test django_aws_ses`.
+   Before a release, run the suite on the oldest supported Django (3.2, Python ≤ 3.10) and the newest.
 
 3. Check test coverage (optional):
 

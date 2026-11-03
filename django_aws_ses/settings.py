@@ -3,7 +3,6 @@ import os
 
 from django.conf import settings as django_settings
 from django.core.exceptions import ImproperlyConfigured
-from django.db.utils import DatabaseError
 
 # Default configuration values
 DEFAULTS = {
@@ -22,6 +21,11 @@ DEFAULTS = {
     'DEFAULT_FROM_EMAIL': 'no-reply@example.com',
     'UNSUBSCRIBE_TEMPLATE': 'django_aws_ses/unsubscribe.html',
     'BASE_TEMPLATE': 'django_aws_ses/base.html',
+    'UNSUBSCRIBE_URL': None,
+    'UNSUBSCRIBE_BASE_URL': None,
+    'AUTO_LIST_UNSUBSCRIBE': False,
+    'UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS': True,
+    'FILTER_EMAIL_UNSUBSCRIBES': False,
 }
 
 # Exported settings
@@ -49,6 +53,11 @@ __all__ = (
     'BASE_TEMPLATE',
     'VERIFY_BOUNCE_SIGNATURES',
     'BOUNCE_CERT_DOMAINS',
+    'AWS_SES_UNSUBSCRIBE_URL',
+    'AWS_SES_UNSUBSCRIBE_BASE_URL',
+    'AWS_SES_AUTO_LIST_UNSUBSCRIBE',
+    'AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS',
+    'AWS_SES_FILTER_EMAIL_UNSUBSCRIBES',
     'logger',
 )
 
@@ -130,6 +139,23 @@ SES_BACKEND_DEBUG_LOGFILE_FORMATTER = getattr(
     django_settings, 'SES_BACKEND_DEBUG_LOGFILE_FORMATTER', DEFAULTS['SES_BACKEND_DEBUG_LOGFILE_FORMATTER']
 )
 TIME_ZONE = django_settings.TIME_ZONE
+
+# Unsubscribe Settings
+# Where unsubscribe links point: a format string containing '{token}' or a callable taking the token.
+# None keeps the library's own confirmation page.
+AWS_SES_UNSUBSCRIBE_URL = getattr(django_settings, 'AWS_SES_UNSUBSCRIBE_URL', DEFAULTS['UNSUBSCRIBE_URL'])
+# Absolute origin of this backend (e.g. 'https://api.example.com'); required for RFC 8058 one-click URLs.
+AWS_SES_UNSUBSCRIBE_BASE_URL = getattr(django_settings, 'AWS_SES_UNSUBSCRIBE_BASE_URL', DEFAULTS['UNSUBSCRIBE_BASE_URL'])
+# Add List-Unsubscribe headers automatically to single-recipient messages mapped to a user/EmailUnsubscribe.
+AWS_SES_AUTO_LIST_UNSUBSCRIBE = getattr(django_settings, 'AWS_SES_AUTO_LIST_UNSUBSCRIBE', DEFAULTS['AUTO_LIST_UNSUBSCRIBE'])
+# Accept unsubscribe tokens issued by django_aws_ses <= 0.1.6 (they embed the email address).
+AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS = getattr(
+    django_settings, 'AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS', DEFAULTS['UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS']
+)
+# Also drop recipients whose EmailUnsubscribe record is marked unsubscribed.
+AWS_SES_FILTER_EMAIL_UNSUBSCRIBES = getattr(
+    django_settings, 'AWS_SES_FILTER_EMAIL_UNSUBSCRIBES', DEFAULTS['FILTER_EMAIL_UNSUBSCRIBES']
+)
 
 # Configure logger with final settings
 logger = configure_logger(SES_BACKEND_DEBUG, SES_BACKEND_DEBUG_LOGFILE_PATH, SES_BACKEND_DEBUG_LOGFILE_FORMATTER)

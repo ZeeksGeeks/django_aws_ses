@@ -1,8 +1,9 @@
-import logging
+import email.policy as email_policy
 from time import sleep
 from datetime import datetime, timedelta
 
 import boto3
+import django
 from django.core.cache import cache
 from django.core.mail.backends.base import BaseEmailBackend
 from django.core.exceptions import ImproperlyConfigured
@@ -11,8 +12,35 @@ from requests.exceptions import RequestException as ResponseError
 from . import settings
 from . import signals
 from . import utils
+from . import unsubscribe
 
 logger = settings.logger
+
+# email.policy.default folds at 78 chars; a long URL with no whitespace cannot be
+# folded, so Python RFC 2047-encodes it (=?utf-8?q?...?=), which mail clients do not
+# accept for List-Unsubscribe. 998 is the SMTP line-length limit (RFC 5322).
+SMTP_POLICY = email_policy.default.clone(max_line_length=998)
+
+# Django 6.0+ EmailMessage.message() takes a ``policy`` argument (Django's own SMTP
+# backend passes one, so subclasses must accept it). Older versions take none, and a
+# subclass forwarding **kwargs to super().message() would fail if given one.
+MESSAGE_ACCEPTS_POLICY = django.VERSION >= (6, 0)
+
+
+def build_mime_message(message):
+    """Build the MIME message with SMTP_POLICY's 998-char line limit.
+
+    Django 6.0+ builds messages with email.policy.default and accepts a ``policy``
+    argument. Older Django takes no arguments and uses the compat32 policy, which
+    does not RFC 2047-encode long ASCII headers but still folds them at 78 chars
+    ("List-Unsubscribe:\\n <url>"); its generator serialises with the message's own
+    policy, so the same 998-char limit is applied by cloning that policy.
+    """
+    if MESSAGE_ACCEPTS_POLICY:
+        return message.message(policy=SMTP_POLICY)
+    mime_message = message.message()
+    mime_message.policy = mime_message.policy.clone(max_line_length=SMTP_POLICY.max_line_length)
+    return mime_message
 
 
 def dkim_sign(message, dkim_domain=None, dkim_key=None, dkim_selector=None, dkim_headers=None):
@@ -76,9 +104,17 @@ class SESBackend(BaseEmailBackend):
             dkim_headers (tuple): Headers to include in DKIM signing.
 
         Raises:
-            ImproperlyConfigured: If AWS credentials are missing.
+            ImproperlyConfigured: If AWS credentials are missing, or if
+                AWS_SES_AUTO_LIST_UNSUBSCRIBE is on without AWS_SES_UNSUBSCRIBE_BASE_URL.
         """
         super().__init__(fail_silently=fail_silently, **kwargs)
+        # Checked here, before any message is sent, so a misconfiguration cannot
+        # abort a batch partway through (bypassing fail_silently and close()).
+        if settings.AWS_SES_AUTO_LIST_UNSUBSCRIBE and not settings.AWS_SES_UNSUBSCRIBE_BASE_URL:
+            raise ImproperlyConfigured(
+                "AWS_SES_AUTO_LIST_UNSUBSCRIBE requires AWS_SES_UNSUBSCRIBE_BASE_URL "
+                "(e.g. 'https://api.example.com') to build one-click List-Unsubscribe URLs."
+            )
         self._access_key_id = aws_access_key or settings.ACCESS_KEY
         self._access_key = aws_secret_key or settings.SECRET_KEY
         self._region_name = aws_region_name or settings.AWS_SES_REGION_NAME
@@ -156,6 +192,22 @@ class SESBackend(BaseEmailBackend):
             if new_conn_created:
                 self.close()
 
+    def _dkim_headers_for(self, mime_message):
+        """Return DKIM headers to sign, adding List-Unsubscribe headers when present.
+
+        Gmail/Yahoo only honour one-click unsubscribe when List-Unsubscribe and
+        List-Unsubscribe-Post are covered by a DKIM signature.
+        """
+        headers = self.dkim_headers
+        if not headers:
+            return headers
+        signed = {h.lower() for h in headers}
+        extra = tuple(
+            h for h in unsubscribe.LIST_UNSUBSCRIBE_HEADERS
+            if h in mime_message and h.lower() not in signed
+        )
+        return tuple(headers) + extra if extra else headers
+
     def send_messages(self, email_messages):
         """Send one or more EmailMessage objects.
 
@@ -182,10 +234,12 @@ class SESBackend(BaseEmailBackend):
             message.aws_ses_response = {'error': 'not sent yet'}
             signals.email_pre_send.send_robust(self.__class__, message=message)
 
+            # Transactional messages (password resets, codes) skip only the unsubscribe filter.
+            transactional = utils.is_transactional(message)
             pre_filter_recipients = message.recipients()
-            message.to = utils.filter_recipients(message.to)
-            message.cc = utils.filter_recipients(message.cc)
-            message.bcc = utils.filter_recipients(message.bcc)
+            message.to = utils.filter_recipients(message.to, skip_unsubscribe=transactional)
+            message.cc = utils.filter_recipients(message.cc, skip_unsubscribe=transactional)
+            message.bcc = utils.filter_recipients(message.bcc, skip_unsubscribe=transactional)
 
             if not message.recipients():
                 logger.debug("No recipients after filtering")
@@ -224,15 +278,21 @@ class SESBackend(BaseEmailBackend):
                 cache.set(cache_key, recent_send_times, timeout=2)
 
             try:
+                mime_message = build_mime_message(message)
+                # The transactional marker is for this backend only; never send it.
+                del mime_message[utils.TRANSACTIONAL_HEADER]
+                if settings.AWS_SES_AUTO_LIST_UNSUBSCRIBE and not transactional:
+                    unsubscribe.apply_auto_list_unsubscribe(mime_message, message.recipients())
+
                 response = self.connection.send_raw_email(
                     Source=source or message.from_email,
                     Destinations=message.recipients(),
                     RawMessage={'Data': dkim_sign(
-                        message.message().as_string(),
+                        mime_message.as_string(),
                         dkim_key=self.dkim_key,
                         dkim_domain=self.dkim_domain,
                         dkim_selector=self.dkim_selector,
-                        dkim_headers=self.dkim_headers
+                        dkim_headers=self._dkim_headers_for(mime_message)
                     )}
                 )
                 message.aws_ses_response = response
