@@ -7,10 +7,11 @@ import pytz
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse, HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import render, redirect
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.views.generic.base import TemplateView
 from django.core.signing import Signer, BadSignature
@@ -18,6 +19,7 @@ from django.core.signing import Signer, BadSignature
 from . import settings
 from . import signals
 from . import utils
+from . import unsubscribe
 from .models import BounceRecord, ComplaintRecord, SendRecord, UnknownRecord, AwsSesUserAddon, EmailUnsubscribe
 
 logger = settings.logger
@@ -440,3 +442,98 @@ class HandleEmailUnsubscribe(TemplateView):
             logger.warning(f"Invalid unsubscribe action for email: {record.email}")
             return redirect(settings.HOME_URL)
         return render(request, self.template_name, self.get_context_data())
+
+
+class HandleTokenUnsubscribe(HandleEmailUnsubscribe):
+    """Confirmation page for token-only unsubscribe links (no address in the URL).
+
+    Works for both user and email-only records. GET only renders the confirmation;
+    changing state requires a POST from the form, so link scanners (e.g. Outlook /
+    Defender Safe Links) that fetch every URL in an email cannot unsubscribe anyone.
+    """
+
+    def _get_token_record(self):
+        record = unsubscribe.resolve_token(self.kwargs['token'])
+        if record is None:
+            logger.warning("Invalid unsubscribe token")
+        return record
+
+    def get(self, request, *args, **kwargs):
+        """Show confirmation page. Never changes subscription state."""
+        self.action = ''
+        record = self._get_token_record()
+        if not record:
+            return redirect(settings.HOME_URL)
+        self.user_email = unsubscribe.get_email(record)
+        return TemplateView.get(self, request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        """Process unsubscribe or re-subscribe."""
+        action = request.POST.get('action')
+        record = self._get_token_record()
+        if not record:
+            return redirect(settings.HOME_URL)
+        self.user_email = unsubscribe.get_email(record)
+        if action == 'unsubscribe':
+            unsubscribe.set_unsubscribed(record, True)
+            self.action = 'unsubscribe'
+        elif action == 'resubscribe':
+            unsubscribe.set_unsubscribed(record, False)
+            self.action = 'resubscribe'
+        else:
+            logger.warning(f"Invalid unsubscribe action for {type(record).__name__} pk={record.pk}")
+            return redirect(settings.HOME_URL)
+        return render(request, self.template_name, self.get_context_data())
+
+
+@csrf_exempt
+def one_click_unsubscribe(request, token):
+    """RFC 8058 one-click unsubscribe endpoint (target of the List-Unsubscribe header).
+
+    POST with the form body ``List-Unsubscribe=One-Click`` unsubscribes; any other
+    POST returns 400 without changing anything. GET/HEAD never change state: link
+    scanners fetch every URL in incoming mail, and some mail clients open the
+    List-Unsubscribe URL in a browser instead of POSTing, so GET redirects to the
+    confirmation page. Other methods return 405. No auth or CSRF token is used:
+    the signed token in the URL is the credential.
+    """
+    if request.method in ('GET', 'HEAD'):
+        return redirect(unsubscribe.build_unsubscribe_url(token))
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['GET', 'HEAD', 'POST'])
+    if request.POST.getlist('List-Unsubscribe') != ['One-Click']:
+        logger.warning("One-click unsubscribe POST without List-Unsubscribe=One-Click body")
+        return HttpResponseBadRequest("Expected form body List-Unsubscribe=One-Click")
+    record = unsubscribe.resolve_token(token)
+    if record is None:
+        logger.warning("Invalid one-click unsubscribe token")
+        return HttpResponseBadRequest("Invalid unsubscribe token")
+    unsubscribe.set_unsubscribed(record, True)
+    return HttpResponse("You have been unsubscribed.", content_type='text/plain')
+
+
+@csrf_exempt
+def unsubscribe_api(request, token):
+    """Small JSON API for apps that host the unsubscribe page in their own frontend.
+
+    GET  -> {"kind": "user"|"email", "unsubscribed": bool, "email": "t***@example.com"}
+    POST {"unsubscribed": true|false} -> same shape after saving.
+
+    GET never changes subscription state. CSRF is exempt because no cookie or
+    session is used; the signed token in the URL is the credential.
+    """
+    if request.method not in ('GET', 'POST'):
+        return HttpResponseNotAllowed(['GET', 'POST'])
+    record = unsubscribe.resolve_token(token)
+    if record is None:
+        return JsonResponse({'error': 'invalid token'}, status=404)
+    if request.method == 'POST':
+        try:
+            payload = json.loads(request.body.decode('utf-8') or '{}')
+        except (ValueError, UnicodeDecodeError):
+            return JsonResponse({'error': 'invalid JSON'}, status=400)
+        value = payload.get('unsubscribed') if isinstance(payload, dict) else None
+        if not isinstance(value, bool):
+            return JsonResponse({'error': '"unsubscribed" must be true or false'}, status=400)
+        unsubscribe.set_unsubscribed(record, value)
+    return JsonResponse(unsubscribe.get_status(record))

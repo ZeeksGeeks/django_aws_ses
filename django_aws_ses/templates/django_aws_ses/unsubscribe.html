@@ -13,6 +13,7 @@
         <h3>{{ confirmation_message }}</h3>
         <p>Manage subscription for {{ user_email }}</p>
         <form method="post" action="">
+            {% csrf_token %}
             <button type="submit" name="action" value="unsubscribe">Unsubscribe</button>
             <button type="submit" name="action" value="resubscribe">Re-subscribe</button>
         </form>

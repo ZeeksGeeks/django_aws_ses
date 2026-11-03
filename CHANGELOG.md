@@ -4,6 +4,46 @@ All notable changes to `django_aws_ses` will be documented in this file.
 
 The format is based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## \[0.1.7\] - 2026-11-03
+
+### Added
+
+- RFC 8058 one-click unsubscribe endpoint `unsubscribe/one-click/<token>/` (`aws_ses_one_click_unsubscribe`): unsubscribes only on POST with the form body `List-Unsubscribe=One-Click` (otherwise 400); GET/HEAD redirect to the confirmation page without changing state; other methods return 405.
+- `django_aws_ses.unsubscribe.list_unsubscribe_headers()` and `list_unsubscribe_headers()` methods on `AwsSesUserAddon` and `EmailUnsubscribe`, returning `List-Unsubscribe` / `List-Unsubscribe-Post` headers.
+- `AWS_SES_AUTO_LIST_UNSUBSCRIBE` (default `False`): the backend adds one-click headers to single-recipient messages it can map to a user or `EmailUnsubscribe` record.
+- `AWS_SES_UNSUBSCRIBE_BASE_URL`: absolute origin used to build one-click URLs (required for one-click; never guessed).
+- `AWS_SES_UNSUBSCRIBE_URL`: format string (`{token}`) or callable so unsubscribe links can point to an app's own frontend.
+- Token-only confirmation page `unsubscribe/token/<token>/` (`aws_ses_unsubscribe_token`) for both user and email-only records.
+- JSON API `unsubscribe/api/<token>/` (`aws_ses_unsubscribe_api`) and helpers in `django_aws_ses.unsubscribe` (`resolve_token`, `get_status`, `set_unsubscribed`) for custom frontends. No DRF dependency.
+- Transactional opt-out: `message.aws_ses_transactional = True` or the `X-Django-AWS-SES-Transactional` header (stripped before sending) skips only the unsubscribe filter for that message.
+- `AWS_SES_FILTER_EMAIL_UNSUBSCRIBES` (default `False`): also drop recipients whose `EmailUnsubscribe` record is unsubscribed.
+- `AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS` (default `True`).
+- `runtests.py` / `test_urls.py` for running the test suite without a host project; tests cover Django 3.2, 4.2, 5.2 and 6.0.
+
+### Changed
+
+- Unsubscribe URL generators now return `/unsubscribe/token/<token>/` (or `AWS_SES_UNSUBSCRIBE_URL`) instead of the uuid / encoded-email routes. The old routes still work and accept both token formats.
+- The SES backend builds messages with a 998-character line limit. On Django 6 this stops long headers such as `List-Unsubscribe` from being RFC 2047-encoded; on all versions it stops them being folded. ASCII bodies with lines over 78 characters are sent as `7bit` instead of `quoted-printable`.
+- When `List-Unsubscribe` headers are present, they are added to the DKIM signed-header list for library-side DKIM signing.
+- The unsubscribe filter logs the addresses it drops.
+
+### Fixed
+
+- Recipient filters (unsubscribe, complaint, bounce, previously-sent, blacklisted domain) compare addresses case-insensitively.
+- `SES_BOUNCE_LIMIT` now counts bounces per address. Previously each bounce row was counted separately, so a limit of 1 blocked after one bounce and any higher limit never blocked. Sites with `SES_BOUNCE_LIMIT > 1` will now see addresses blocked once they reach the limit.
+- Recipients written as `"Name <user@example.com>"` are matched by their address. Previously they matched no filter, and the domain check read the domain as `example.com>` and silently dropped them.
+- The unsubscribe template now includes `{% csrf_token %}`; previously form submissions failed with 403 under `CsrfViewMiddleware`.
+- A legacy email-only token used on the user unsubscribe route no longer raises an error.
+
+### Security
+
+- Unsubscribe tokens now carry only the record kind and id, signed with a dedicated salt; the email address no longer appears in unsubscribe links (previously readable in the token, and base64-encoded in the email-only route).
+- Tokens issued by 0.1.6 and earlier are still accepted until the next major version, or until `AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS = False`.
+
+### Notes
+
+- No migrations.
+
 ## \[0.1.6\] - 2026-04-28
 
 ### Added
