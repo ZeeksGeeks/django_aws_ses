@@ -1,12 +1,12 @@
 import json
 
 import boto3
-import pytz
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import render, redirect
+from django.utils import timezone
 from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from django.views.decorators.csrf import csrf_exempt
@@ -32,23 +32,20 @@ def superuser_only(view_func):
     return _inner
 
 
-def stats_to_list(stats_dict, localize=pytz):
+def stats_to_list(stats_dict):
     """Parse SES send statistics into an ordered list of 15-minute summaries.
 
     Args:
         stats_dict (dict): Raw SES statistics data.
-        localize (module): Timezone module (default: pytz).
 
     Returns:
         list: Sorted list of datapoints with localized timestamps.
     """
     datapoints = []
-    current_tz = localize.timezone(settings.TIME_ZONE) if localize else None
+    current_tz = timezone.get_default_timezone()
 
     for dp in stats_dict['SendDataPoints']:
-        if current_tz:
-            utc_dt = dp['Timestamp']
-            dp['Timestamp'] = current_tz.normalize(utc_dt.astimezone(current_tz))
+        dp['Timestamp'] = timezone.localtime(dp['Timestamp'], current_tz)
         datapoints.append(dp)
 
     return sorted(datapoints, key=lambda x: x['Timestamp'])

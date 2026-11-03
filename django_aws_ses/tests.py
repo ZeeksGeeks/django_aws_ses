@@ -4,10 +4,11 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils.http import urlsafe_base64_encode
 from unittest.mock import patch, Mock
+import datetime
 import json
 
 from .backends import SESBackend
-from .views import handle_bounce
+from .views import handle_bounce, stats_to_list
 from .utils import filter_recipients
 from .models import BounceRecord, ComplaintRecord, AwsSesUserAddon
 
@@ -898,3 +899,26 @@ class RecipientFilterTests(TestCase):
         with patch.object(aws_ses_settings, 'AWS_SES_AUTO_LIST_UNSUBSCRIBE', True):
             self.assertEqual(filter_recipients(list(recipients)), ['other@example.com'])
         print("  → Unsubscribed address dropped")
+
+
+class StatsToListTests(TestCase):
+    """Test SES send statistics parsing for the dashboard"""
+
+    @override_settings(TIME_ZONE='America/New_York')
+    def test_timestamps_localized_and_sorted(self):
+        """Test UTC SES timestamps are converted to TIME_ZONE and sorted"""
+        print("\n✓ Testing stats_to_list localizes and sorts datapoints")
+        print("  → Setting up out-of-order UTC datapoints")
+        later = datetime.datetime(2026, 1, 15, 18, 30, tzinfo=datetime.timezone.utc)
+        earlier = datetime.datetime(2026, 1, 15, 12, 0, tzinfo=datetime.timezone.utc)
+        stats = {'SendDataPoints': [{'Timestamp': later}, {'Timestamp': earlier}]}
+
+        result = stats_to_list(stats)
+
+        print("  → Datapoints sorted oldest first")
+        self.assertEqual([dp['Timestamp'] for dp in result], [earlier, later])
+        print("  → Timestamps converted to America/New_York (UTC-5 in January)")
+        self.assertEqual(result[0]['Timestamp'].hour, 7)
+        self.assertEqual(result[1]['Timestamp'].hour, 13)
+        self.assertEqual(result[0]['Timestamp'].utcoffset(), datetime.timedelta(hours=-5))
+        print("  → Datapoints localized correctly")
