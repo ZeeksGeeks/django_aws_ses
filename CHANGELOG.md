@@ -36,6 +36,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Recipients written as `"Name <user@example.com>"` are matched by their address. Previously they matched no filter, and the domain check read the domain as `example.com>` and silently dropped them.
 - The unsubscribe template now includes `{% csrf_token %}`; previously form submissions failed with 403 under `CsrfViewMiddleware`.
 - A legacy email-only token used on the user unsubscribe route no longer raises an error.
+- Removed the undeclared `pytz` dependency. `views.py` imported it but it was not in `install_requires`, so a fresh install on Django 4.0+ failed with `ModuleNotFoundError: No module named 'pytz'` when the URLs or views were imported. The SES stats dashboard now uses `django.utils.timezone` to convert timestamps to `TIME_ZONE`.
 ### Security
 
 - Unsubscribe tokens now carry only the record kind and id, signed with a dedicated salt; the email address no longer appears in unsubscribe links (previously readable in the token, and base64-encoded in the email-only route).
