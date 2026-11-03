@@ -26,6 +26,7 @@ setup(
             'pytest>=7.0.0',
             'pytest-django>=4.5.0',
             'mock>=4.0.3',
+            'dkimpy>=1.0.0',
         ],
         'dkim': [
             'dkimpy>=1.0.0',  # Optional for DKIM signing

@@ -37,6 +37,7 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - The unsubscribe template now includes `{% csrf_token %}`; previously form submissions failed with 403 under `CsrfViewMiddleware`.
 - A legacy email-only token used on the user unsubscribe route no longer raises an error.
 - Removed the undeclared `pytz` dependency. `views.py` imported it but it was not in `install_requires`, so a fresh install on Django 4.0+ failed with `ModuleNotFoundError: No module named 'pytz'` when the URLs or views were imported. The SES stats dashboard now uses `django.utils.timezone` to convert timestamps to `TIME_ZONE`.
+- Library-side DKIM signing (`DKIM_*` settings) now works. The backend passed the message to dkimpy as `str`, signing failed with `cannot use a bytes pattern on a string-like object`, and every message was sent unsigned; this predates 0.1.7. Messages are now signed as bytes, so `List-Unsubscribe` / `List-Unsubscribe-Post` are covered by the signature when present. `RawMessage['Data']` passed to SES is now `bytes`.
 ### Security
 
 - Unsubscribe tokens now carry only the record kind and id, signed with a dedicated salt; the email address no longer appears in unsubscribe links (previously readable in the token, and base64-encoded in the email-only route).
@@ -46,7 +47,6 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 ### Known Issues
 
-- Library-side DKIM signing (`DKIM_*` settings) fails and sends messages unsigned; this predates 0.1.7. Use SES Easy DKIM.
 - On SQLite, case-insensitive address matching covers ASCII letters only.
 
 ### Notes
