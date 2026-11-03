@@ -10,9 +10,9 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 
 - RFC 8058 one-click unsubscribe endpoint `unsubscribe/one-click/<token>/` (`aws_ses_one_click_unsubscribe`): unsubscribes only on POST with the form body `List-Unsubscribe=One-Click` (otherwise 400); GET/HEAD redirect to the confirmation page without changing state; other methods return 405.
 - `django_aws_ses.unsubscribe.list_unsubscribe_headers()` and `list_unsubscribe_headers()` methods on `AwsSesUserAddon` and `EmailUnsubscribe`, returning `List-Unsubscribe` / `List-Unsubscribe-Post` headers.
-- `AWS_SES_AUTO_LIST_UNSUBSCRIBE` (default `False`): the backend adds one-click headers to single-recipient messages it can map to a user or `EmailUnsubscribe` record.
+- `AWS_SES_AUTO_LIST_UNSUBSCRIBE` (default `False`): the backend adds one-click headers to single-recipient messages it can map to a user or `EmailUnsubscribe` record. It also turns on the `EmailUnsubscribe` filter, and `SESBackend` raises `ImproperlyConfigured` when created if `AWS_SES_UNSUBSCRIBE_BASE_URL` is missing.
 - `AWS_SES_UNSUBSCRIBE_BASE_URL`: absolute origin used to build one-click URLs (required for one-click; never guessed).
-- `AWS_SES_UNSUBSCRIBE_URL`: format string (`{token}`) or callable so unsubscribe links can point to an app's own frontend.
+- `AWS_SES_UNSUBSCRIBE_URL`: string containing `{token}` (the token is percent-encoded) or callable, so unsubscribe links can point to an app's own frontend.
 - Token-only confirmation page `unsubscribe/token/<token>/` (`aws_ses_unsubscribe_token`) for both user and email-only records.
 - JSON API `unsubscribe/api/<token>/` (`aws_ses_unsubscribe_api`) and helpers in `django_aws_ses.unsubscribe` (`resolve_token`, `get_status`, `set_unsubscribed`) for custom frontends. No DRF dependency.
 - Transactional opt-out: `message.aws_ses_transactional = True` or the `X-Django-AWS-SES-Transactional` header (stripped before sending) skips only the unsubscribe filter for that message.
@@ -26,6 +26,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - The SES backend builds messages with a 998-character line limit. On Django 6 this stops long headers such as `List-Unsubscribe` from being RFC 2047-encoded; on all versions it stops them being folded. ASCII bodies with lines over 78 characters are sent as `7bit` instead of `quoted-printable`.
 - When `List-Unsubscribe` headers are present, they are added to the DKIM signed-header list for library-side DKIM signing.
 - The unsubscribe filter logs the addresses it drops.
+- `HandleUnsubscribe`, `HandleEmailUnsubscribe` and `HandleTokenUnsubscribe` now share a base class, `UnsubscribePageView`; subclasses supply `get_record()`. Unsubscribe page logs identify records by pk instead of email address.
+- Removed unused imports from `models.py`, `views.py`, `backends.py`, `utils.py` and `settings.py`.
 
 ### Fixed
 
@@ -34,11 +36,17 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - Recipients written as `"Name <user@example.com>"` are matched by their address. Previously they matched no filter, and the domain check read the domain as `example.com>` and silently dropped them.
 - The unsubscribe template now includes `{% csrf_token %}`; previously form submissions failed with 403 under `CsrfViewMiddleware`.
 - A legacy email-only token used on the user unsubscribe route no longer raises an error.
-
 ### Security
 
 - Unsubscribe tokens now carry only the record kind and id, signed with a dedicated salt; the email address no longer appears in unsubscribe links (previously readable in the token, and base64-encoded in the email-only route).
+- All unsubscribe confirmation pages show the address masked (`a***@example.com`), so a forwarded link does not reveal it.
+- The one-click GET redirect only follows validly signed tokens, and tokens are percent-encoded in `AWS_SES_UNSUBSCRIBE_URL`, so a crafted link cannot add parameters to the frontend URL.
 - Tokens issued by 0.1.6 and earlier are still accepted until the next major version, or until `AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS = False`.
+
+### Known Issues
+
+- Library-side DKIM signing (`DKIM_*` settings) fails and sends messages unsigned; this predates 0.1.7. Use SES Easy DKIM.
+- On SQLite, case-insensitive address matching covers ASCII letters only.
 
 ### Notes
 

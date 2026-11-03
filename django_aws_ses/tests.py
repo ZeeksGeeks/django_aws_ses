@@ -3,12 +3,11 @@ from django.core.mail import EmailMessage
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
 from unittest.mock import patch, Mock
 import json
 
 from .backends import SESBackend
-from .views import handle_bounce, HandleUnsubscribe
+from .views import handle_bounce
 from .utils import filter_recipients
 from .models import BounceRecord, ComplaintRecord, AwsSesUserAddon
 
@@ -326,6 +325,21 @@ class UnsubscribeUrlTests(_UnsubscribeFixturesMixin, TestCase):
             self.assertEqual(self.addon.unsubscribe_url_generator(), f'https://app.example.com/u?t={token}')
         print("  → Frontend URLs generated")
 
+    def test_url_setting_escapes_token(self):
+        """Test AWS_SES_UNSUBSCRIBE_URL string form - expects token escaped, no injection or KeyError"""
+        print("\n⚠ Testing AWS_SES_UNSUBSCRIBE_URL with hostile tokens (escaped, no error expected)")
+        with patch.object(aws_ses_settings, 'AWS_SES_UNSUBSCRIBE_URL', 'https://app.example.com/unsub?token={token}'):
+            print("  → Token containing & and = cannot add query parameters")
+            self.assertEqual(unsubscribe.build_unsubscribe_url('x&admin=1'),
+                             'https://app.example.com/unsub?token=x%26admin%3D1')
+            print("  → Token containing / and # cannot add path segments or a fragment")
+            self.assertEqual(unsubscribe.build_unsubscribe_url('a/b#c'),
+                             'https://app.example.com/unsub?token=a%2Fb%23c')
+        print("  → Other {...} in the URL are left alone (no KeyError)")
+        with patch.object(aws_ses_settings, 'AWS_SES_UNSUBSCRIBE_URL', 'https://app.example.com/{lang}/u/{token}'):
+            self.assertEqual(unsubscribe.build_unsubscribe_url('abc:def'), 'https://app.example.com/{lang}/u/abc:def')
+        print("  ✓ Token escaped correctly")
+
     def test_old_routes_accept_new_tokens(self):
         """Test the existing uuid/encoded_email routes accept new-format tokens"""
         print("\n✓ Testing old routes with new tokens")
@@ -402,6 +416,18 @@ class ConfirmationPageTests(_UnsubscribeFixturesMixin, TestCase):
         self.assertRedirects(self.client.post(url, {'action': 'unsubscribe'}), '/', fetch_redirect_response=False)
         print("  ✓ Invalid token redirected")
 
+    def test_pages_mask_email(self):
+        """Test every confirmation page shows the address masked, never in full"""
+        print("\n✓ Testing confirmation pages mask the address")
+        masked = {'alice@example.com': 'a***@example.com', 'list@example.com': 'l***@example.com'}
+        for label, url, _ in self._page_urls():
+            full = 'alice@example.com' if 'user' in label else 'list@example.com'
+            print(f"  → GET and POST {label}")
+            for response in (self.client.get(url), self.client.post(url, {'action': 'resubscribe'})):
+                self.assertContains(response, masked[full])
+                self.assertNotContains(response, full)
+        print("  → Address masked on GET and POST")
+
 
 class OneClickUnsubscribeTests(_UnsubscribeFixturesMixin, TestCase):
     """Test the RFC 8058 one-click endpoint"""
@@ -423,6 +449,18 @@ class OneClickUnsubscribeTests(_UnsubscribeFixturesMixin, TestCase):
             response = self.client.get(self._url(self.addon))
             self.assertTrue(response['Location'].startswith('https://app.example.com/u/'))
         print("  → GET never changes state")
+
+    def test_get_invalid_token_redirects_home(self):
+        """Test one-click GET with an unsigned token - expects redirect home, not to the frontend"""
+        print("\n⚠ Testing one-click GET with an invalid token (302 to HOME_URL expected)")
+        with patch.object(aws_ses_settings, 'AWS_SES_UNSUBSCRIBE_URL', 'https://app.example.com/unsub?token={token}'):
+            for token in ('x&admin=1', 'bogus'):
+                print(f"  → GET with token {token!r}")
+                url = reverse('django_aws_ses:aws_ses_one_click_unsubscribe', kwargs={'token': token})
+                response = self.client.get(url)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response['Location'], '/')
+        print("  ✓ Unsigned tokens never reach AWS_SES_UNSUBSCRIBE_URL")
 
     def test_other_methods_not_allowed(self):
         """Test non-GET/POST methods - expects Method Not Allowed"""
@@ -607,6 +645,38 @@ class BackendUnsubscribeHeaderTests(_UnsubscribeFixturesMixin, TestCase):
         self.assertNotIn('=?utf-8?', as_string)
         self.assertIn(f'List-Unsubscribe: <{long_url}>\n', as_string)
         print("  → Header is a single unencoded line")
+
+    def test_message_subclass_forwarding_kwargs(self):
+        """Test a message subclass whose message() forwards **kwargs builds on every Django version"""
+        print("\n✓ Testing message() subclass that forwards **kwargs")
+        from .backends import build_mime_message
+
+        class ForwardingMessage(EmailMultiAlternatives):
+            def message(self, **kwargs):
+                return super().message(**kwargs)
+
+        long_url = f"{ONE_CLICK_BASE}/aws_ses/unsubscribe/one-click/{'A' * 180}/"
+        message = ForwardingMessage('Hi', 'Hello', 'from@example.com', ['x@example.com'],
+                                    headers={'List-Unsubscribe': f'<{long_url}>'})
+        print("  → Building MIME message")
+        as_string = build_mime_message(message).as_string()
+        self.assertIn(f'List-Unsubscribe: <{long_url}>\n', as_string)
+        print("  → Built without TypeError, header on one line")
+
+    def test_auto_headers_require_base_url_at_init(self):
+        """Test auto headers without AWS_SES_UNSUBSCRIBE_BASE_URL - expects ImproperlyConfigured at backend init"""
+        print("\n⚠ Testing backend init with auto headers and no base URL (ImproperlyConfigured expected)")
+        with patch.object(aws_ses_settings, 'AWS_SES_AUTO_LIST_UNSUBSCRIBE', True):
+            print("  → Base URL missing: raises before any message is sent")
+            with patch.object(aws_ses_settings, 'AWS_SES_UNSUBSCRIBE_BASE_URL', None):
+                with self.assertRaises(ImproperlyConfigured):
+                    SESBackend(fail_silently=True)
+            print("  → Base URL set: backend created")
+            SESBackend()
+        print("  → Auto headers off: base URL not required")
+        with patch.object(aws_ses_settings, 'AWS_SES_UNSUBSCRIBE_BASE_URL', None):
+            SESBackend()
+        print("  ✓ Misconfiguration reported at init")
 
     @patch.object(aws_ses_settings, 'AWS_SES_AUTO_LIST_UNSUBSCRIBE', True)
     def test_auto_headers_added_for_single_mapped_recipient(self):
@@ -817,3 +887,14 @@ class RecipientFilterTests(TestCase):
         with patch.object(aws_ses_settings, 'AWS_SES_FILTER_EMAIL_UNSUBSCRIBES', True):
             self.assertEqual(filter_recipients(list(recipients)), ['still@example.com'])
         print("  → Opt-in filter works")
+
+    @patch('django_aws_ses.utils.validater_email_domain', return_value=True)
+    def test_email_unsubscribe_filtered_when_auto_headers_on(self, _mock_domain):
+        """Test one-click unsubscribes of EmailUnsubscribe records are honoured when auto headers are on"""
+        print("\n✓ Testing EmailUnsubscribe filtered whenever AWS_SES_AUTO_LIST_UNSUBSCRIBE is on")
+        EmailUnsubscribe.objects.create(email='list@example.com', unsubscribed=True)
+        recipients = ['list@example.com', 'other@example.com']
+        print("  → Auto headers on, AWS_SES_FILTER_EMAIL_UNSUBSCRIBES off")
+        with patch.object(aws_ses_settings, 'AWS_SES_AUTO_LIST_UNSUBSCRIBE', True):
+            self.assertEqual(filter_recipients(list(recipients)), ['other@example.com'])
+        print("  → Unsubscribed address dropped")

@@ -10,11 +10,9 @@ from django.dispatch.dispatcher import receiver
 from django.db.models import Count
 from django.db.models.functions import Lower
 from django.contrib.auth import get_user_model
-from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.exceptions import InvalidSignature
-import requests
 
 from . import settings
 from . import signals
@@ -26,7 +24,6 @@ from .models import (
     EmailUnsubscribe,
 )
 
-from django.contrib.auth import get_user_model
 User = get_user_model()
 
 # Logger setup
@@ -282,7 +279,9 @@ def filter_recipients(recipiant_list, skip_unsubscribe=False):
 def filter_recipients_with_unsubscribe(recipiant_list):
     """
     Removes recipients who have unsubscribed (case-insensitive). EmailUnsubscribe
-    records are also checked when AWS_SES_FILTER_EMAIL_UNSUBSCRIBES is True.
+    records are also checked when AWS_SES_FILTER_EMAIL_UNSUBSCRIBES is True, and
+    always when AWS_SES_AUTO_LIST_UNSUBSCRIBE is True: the backend issues one-click
+    headers for EmailUnsubscribe records, so it must honour them.
     """
     normalized = _normalized_addresses(recipiant_list)
     email_field = User.get_email_field_name()
@@ -291,7 +290,7 @@ def filter_recipients_with_unsubscribe(recipiant_list):
         .filter(aws_ses__unsubscribe=True, aws_ses_addr__in=normalized)
         .values_list('aws_ses_addr', flat=True)
     )
-    if settings.AWS_SES_FILTER_EMAIL_UNSUBSCRIBES:
+    if settings.AWS_SES_FILTER_EMAIL_UNSUBSCRIBES or settings.AWS_SES_AUTO_LIST_UNSUBSCRIBE:
         blacklist_emails.update(
             EmailUnsubscribe.objects.annotate(aws_ses_addr=Lower('email'))
             .filter(unsubscribed=True, aws_ses_addr__in=normalized)

@@ -1,10 +1,9 @@
 import email.policy as email_policy
-import inspect
-import logging
 from time import sleep
 from datetime import datetime, timedelta
 
 import boto3
+import django
 from django.core.cache import cache
 from django.core.mail.backends.base import BaseEmailBackend
 from django.core.exceptions import ImproperlyConfigured
@@ -22,9 +21,14 @@ logger = settings.logger
 # accept for List-Unsubscribe. 998 is the SMTP line-length limit (RFC 5322).
 SMTP_POLICY = email_policy.default.clone(max_line_length=998)
 
+# Django 6.0+ EmailMessage.message() takes a ``policy`` argument (Django's own SMTP
+# backend passes one, so subclasses must accept it). Older versions take none, and a
+# subclass forwarding **kwargs to super().message() would fail if given one.
+MESSAGE_ACCEPTS_POLICY = django.VERSION >= (6, 0)
+
 
 def build_mime_message(message):
-    """Build the MIME message, using SMTP_POLICY when message() accepts a policy.
+    """Build the MIME message with SMTP_POLICY's 998-char line limit.
 
     Django 6.0+ builds messages with email.policy.default and accepts a ``policy``
     argument. Older Django takes no arguments and uses the compat32 policy, which
@@ -32,11 +36,7 @@ def build_mime_message(message):
     ("List-Unsubscribe:\\n <url>"); its generator serialises with the message's own
     policy, so the same 998-char limit is applied by cloning that policy.
     """
-    try:
-        params = inspect.signature(message.message).parameters.values()
-    except (TypeError, ValueError):
-        params = []
-    if any(p.name == 'policy' or p.kind == p.VAR_KEYWORD for p in params):
+    if MESSAGE_ACCEPTS_POLICY:
         return message.message(policy=SMTP_POLICY)
     mime_message = message.message()
     mime_message.policy = mime_message.policy.clone(max_line_length=SMTP_POLICY.max_line_length)
@@ -104,9 +104,17 @@ class SESBackend(BaseEmailBackend):
             dkim_headers (tuple): Headers to include in DKIM signing.
 
         Raises:
-            ImproperlyConfigured: If AWS credentials are missing.
+            ImproperlyConfigured: If AWS credentials are missing, or if
+                AWS_SES_AUTO_LIST_UNSUBSCRIBE is on without AWS_SES_UNSUBSCRIBE_BASE_URL.
         """
         super().__init__(fail_silently=fail_silently, **kwargs)
+        # Checked here, before any message is sent, so a misconfiguration cannot
+        # abort a batch partway through (bypassing fail_silently and close()).
+        if settings.AWS_SES_AUTO_LIST_UNSUBSCRIBE and not settings.AWS_SES_UNSUBSCRIBE_BASE_URL:
+            raise ImproperlyConfigured(
+                "AWS_SES_AUTO_LIST_UNSUBSCRIBE requires AWS_SES_UNSUBSCRIBE_BASE_URL "
+                "(e.g. 'https://api.example.com') to build one-click List-Unsubscribe URLs."
+            )
         self._access_key_id = aws_access_key or settings.ACCESS_KEY
         self._access_key = aws_secret_key or settings.SECRET_KEY
         self._region_name = aws_region_name or settings.AWS_SES_REGION_NAME

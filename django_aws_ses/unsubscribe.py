@@ -12,6 +12,8 @@ endpoints on top of them:
     get_status(record)                     # {'kind': ..., 'unsubscribed': ..., 'email': masked}
     set_unsubscribed(record, True/False)
 """
+from urllib.parse import quote
+
 from django.contrib.auth import get_user_model
 from django.core import signing
 from django.core.exceptions import ImproperlyConfigured, ValidationError
@@ -68,6 +70,14 @@ def load_legacy_token(token):
         return KIND_USER, pk, email
     # EmailUnsubscribe tokens signed the bare email address
     return KIND_EMAIL, None, value
+
+
+def is_valid_token(token):
+    """Return True if the token carries a valid signature (current or accepted legacy format).
+
+    Checks the signature only and never touches the database.
+    """
+    return load_token(token) is not None or load_legacy_token(token) is not None
 
 
 def _addon_for_user(user):
@@ -129,15 +139,17 @@ def token_for(obj):
 def build_unsubscribe_url(token):
     """Return the URL of the page where a person manages their subscription.
 
-    Uses ``AWS_SES_UNSUBSCRIBE_URL`` (format string with ``{token}`` or a callable
+    Uses ``AWS_SES_UNSUBSCRIBE_URL`` (string containing ``{token}`` or a callable
     taking the token) when set, otherwise the library's token confirmation page
-    (a relative path, as the generators have always returned).
+    (a relative path, as the generators have always returned). In the string form
+    the token is percent-encoded so it cannot add query parameters or path
+    segments, and other ``{...}`` in the URL are left as they are.
     """
     target = settings.AWS_SES_UNSUBSCRIBE_URL
     if callable(target):
         return target(token)
     if target:
-        return target.format(token=token)
+        return target.replace('{token}', quote(token, safe=':'))
     return reverse('django_aws_ses:aws_ses_unsubscribe_token', kwargs={'token': token})
 
 

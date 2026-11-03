@@ -1,6 +1,4 @@
 import json
-import logging
-from datetime import datetime
 
 import boto3
 import pytz
@@ -9,18 +7,17 @@ from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import render, redirect
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.views.generic.base import TemplateView
-from django.core.signing import Signer, BadSignature
 
 from . import settings
 from . import signals
 from . import utils
 from . import unsubscribe
-from .models import BounceRecord, ComplaintRecord, SendRecord, UnknownRecord, AwsSesUserAddon, EmailUnsubscribe
+from .models import BounceRecord, ComplaintRecord, SendRecord, UnknownRecord, EmailUnsubscribe
 
 logger = settings.logger
 User = get_user_model()
@@ -295,14 +292,24 @@ def handle_bounce(request):
     return HttpResponse()
 
 
-class HandleUnsubscribe(TemplateView):
-    """View to handle email unsubscribe and re-subscribe requests with confirmation."""
+class UnsubscribePageView(TemplateView):
+    """Base confirmation page for unsubscribe and re-subscribe requests.
+
+    Subclasses implement ``get_record()`` to return the AwsSesUserAddon or
+    EmailUnsubscribe the URL refers to (or None). GET only renders the confirmation;
+    changing state requires a POST from the form, so link scanners (e.g. Outlook /
+    Defender Safe Links) that fetch every URL in an email cannot unsubscribe anyone.
+    The address is shown masked, because anyone a link is forwarded to can open it.
+    """
     http_method_names = ['get', 'post']
     template_name = settings.UNSUBSCRIBE_TEMPLATE
     base_template_name = settings.BASE_TEMPLATE
     confirmation_message = "Please confirm your email subscription preference"
     unsubscribe_message = "You have been unsubscribed"
     resubscribe_message = "You have been re-subscribed"
+
+    def get_record(self):
+        raise NotImplementedError("Subclasses must implement get_record()")
 
     def get_context_data(self, **kwargs):
         """Add base template and appropriate message to context."""
@@ -316,164 +323,21 @@ class HandleUnsubscribe(TemplateView):
         return context
 
     def get(self, request, *args, **kwargs):
-        """Show confirmation page for unsubscribe or re-subscribe."""
-        uuid = self.kwargs['uuid']
-        token = self.kwargs['token']
+        """Show confirmation page. Never changes subscription state."""
         self.action = ''  # Reset action to ensure confirmation page
-
-        try:
-            uuid = force_str(urlsafe_base64_decode(uuid))
-            user = User.objects.get(pk=uuid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
-            logger.warning(f"Invalid unsubscribe UUID: {e}")
+        record = self.get_record()
+        if not record:
             return redirect(settings.HOME_URL)
-
-        try:
-            ses = user.aws_ses
-        except AwsSesUserAddon.DoesNotExist:
-            ses = AwsSesUserAddon.objects.create(user=user)
-
-        if not user or not ses.verify_unsubscribe_token(token):
-            logger.warning(f"Invalid token for user: {user.email}")
-            return redirect(settings.HOME_URL)
-
-        self.user_email = user.email
+        self.user_email = unsubscribe.mask_email(unsubscribe.get_email(record))
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         """Process unsubscribe or re-subscribe request."""
-        uuid = self.kwargs['uuid']
-        token = self.kwargs['token']
         action = request.POST.get('action')
-
-        try:
-            uuid = force_str(urlsafe_base64_decode(uuid))
-            user = User.objects.get(pk=uuid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
-            logger.warning(f"Invalid unsubscribe UUID: {e}")
-            return redirect(settings.HOME_URL)
-
-        try:
-            ses = user.aws_ses
-        except AwsSesUserAddon.DoesNotExist:
-            ses = AwsSesUserAddon.objects.create(user=user)
-
-        if not user or not ses.verify_unsubscribe_token(token):
-            logger.warning(f"Invalid token for user: {user.email}")
-            return redirect(settings.HOME_URL)
-
-        self.user_email = user.email
-        if action == 'unsubscribe':
-            ses.unsubscribe = True
-            ses.save()
-            logger.info(f"Unsubscribed user: {user.email}")
-            self.action = 'unsubscribe'
-        elif action == 'resubscribe':
-            ses.unsubscribe = False
-            ses.save()
-            logger.info(f"Re-subscribed user: {user.email}")
-            self.action = 'resubscribe'
-        else:
-            logger.warning(f"Invalid action for user: {user.email}")
-            return redirect(settings.HOME_URL)
-
-        return render(request, self.template_name, self.get_context_data())
-
-
-class HandleEmailUnsubscribe(TemplateView):
-    """View to handle unsubscribe for non-user email addresses."""
-    http_method_names = ['get', 'post']
-    template_name = settings.UNSUBSCRIBE_TEMPLATE
-    base_template_name = settings.BASE_TEMPLATE
-    confirmation_message = "Please confirm your email subscription preference"
-    unsubscribe_message = "You have been unsubscribed"
-    resubscribe_message = "You have been re-subscribed"
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        context['base_template_name'] = self.base_template_name
-        context['confirmation_message'] = self.confirmation_message
-        context['unsubscribe_message'] = self.unsubscribe_message
-        context['resubscribe_message'] = self.resubscribe_message
-        context['user_email'] = getattr(self, 'user_email', '')
-        context['action'] = getattr(self, 'action', '')
-        return context
-
-    def _get_record(self, encoded_email, token):
-        """Decode email, fetch EmailUnsubscribe record, verify token."""
-        try:
-            email = force_str(urlsafe_base64_decode(encoded_email))
-            record = EmailUnsubscribe.objects.get(email=email)
-        except (TypeError, ValueError, OverflowError, EmailUnsubscribe.DoesNotExist) as e:
-            logger.warning(f"Invalid email unsubscribe request: {e}")
-            return None
-        if not record.verify_token(token):
-            logger.warning(f"Invalid unsubscribe token for email: {email}")
-            return None
-        return record
-
-    def get(self, request, *args, **kwargs):
-        """Show confirmation page."""
-        self.action = ''
-        record = self._get_record(self.kwargs['encoded_email'], self.kwargs['token'])
+        record = self.get_record()
         if not record:
             return redirect(settings.HOME_URL)
-        self.user_email = record.email
-        return super().get(request, *args, **kwargs)
-
-    def post(self, request, *args, **kwargs):
-        """Process unsubscribe or re-subscribe."""
-        action = request.POST.get('action')
-        record = self._get_record(self.kwargs['encoded_email'], self.kwargs['token'])
-        if not record:
-            return redirect(settings.HOME_URL)
-        self.user_email = record.email
-        if action == 'unsubscribe':
-            record.unsubscribed = True
-            record.save()
-            logger.info(f"Unsubscribed email: {record.email}")
-            self.action = 'unsubscribe'
-        elif action == 'resubscribe':
-            record.unsubscribed = False
-            record.save()
-            logger.info(f"Re-subscribed email: {record.email}")
-            self.action = 'resubscribe'
-        else:
-            logger.warning(f"Invalid unsubscribe action for email: {record.email}")
-            return redirect(settings.HOME_URL)
-        return render(request, self.template_name, self.get_context_data())
-
-
-class HandleTokenUnsubscribe(HandleEmailUnsubscribe):
-    """Confirmation page for token-only unsubscribe links (no address in the URL).
-
-    Works for both user and email-only records. GET only renders the confirmation;
-    changing state requires a POST from the form, so link scanners (e.g. Outlook /
-    Defender Safe Links) that fetch every URL in an email cannot unsubscribe anyone.
-    """
-
-    def _get_token_record(self):
-        record = unsubscribe.resolve_token(self.kwargs['token'])
-        if record is None:
-            logger.warning("Invalid unsubscribe token")
-        return record
-
-    def get(self, request, *args, **kwargs):
-        """Show confirmation page. Never changes subscription state."""
-        self.action = ''
-        record = self._get_token_record()
-        if not record:
-            return redirect(settings.HOME_URL)
-        self.user_email = unsubscribe.get_email(record)
-        return TemplateView.get(self, request, *args, **kwargs)
-
-    def post(self, request, *args, **kwargs):
-        """Process unsubscribe or re-subscribe."""
-        action = request.POST.get('action')
-        record = self._get_token_record()
-        if not record:
-            return redirect(settings.HOME_URL)
-        self.user_email = unsubscribe.get_email(record)
+        self.user_email = unsubscribe.mask_email(unsubscribe.get_email(record))
         if action == 'unsubscribe':
             unsubscribe.set_unsubscribed(record, True)
             self.action = 'unsubscribe'
@@ -484,6 +348,54 @@ class HandleTokenUnsubscribe(HandleEmailUnsubscribe):
             logger.warning(f"Invalid unsubscribe action for {type(record).__name__} pk={record.pk}")
             return redirect(settings.HOME_URL)
         return render(request, self.template_name, self.get_context_data())
+
+
+class HandleUnsubscribe(UnsubscribePageView):
+    """View to handle email unsubscribe and re-subscribe requests with confirmation."""
+
+    def get_record(self):
+        """Decode the user pk, fetch the user's AwsSesUserAddon, verify token."""
+        try:
+            uuid = force_str(urlsafe_base64_decode(self.kwargs['uuid']))
+            user = User.objects.get(pk=uuid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist) as e:
+            logger.warning(f"Invalid unsubscribe UUID: {e}")
+            return None
+        ses = unsubscribe.as_record(user)
+        if not ses.verify_unsubscribe_token(self.kwargs['token']):
+            logger.warning(f"Invalid unsubscribe token for user pk={user.pk}")
+            return None
+        return ses
+
+
+class HandleEmailUnsubscribe(UnsubscribePageView):
+    """View to handle unsubscribe for non-user email addresses."""
+
+    def get_record(self):
+        """Decode email, fetch EmailUnsubscribe record, verify token."""
+        try:
+            email = force_str(urlsafe_base64_decode(self.kwargs['encoded_email']))
+            record = EmailUnsubscribe.objects.get(email=email)
+        except (TypeError, ValueError, OverflowError, EmailUnsubscribe.DoesNotExist) as e:
+            logger.warning(f"Invalid email unsubscribe request: {e}")
+            return None
+        if not record.verify_token(self.kwargs['token']):
+            logger.warning(f"Invalid unsubscribe token for EmailUnsubscribe pk={record.pk}")
+            return None
+        return record
+
+
+class HandleTokenUnsubscribe(UnsubscribePageView):
+    """Confirmation page for token-only unsubscribe links (no address in the URL).
+
+    Works for both user and email-only records.
+    """
+
+    def get_record(self):
+        record = unsubscribe.resolve_token(self.kwargs['token'])
+        if record is None:
+            logger.warning("Invalid unsubscribe token")
+        return record
 
 
 @csrf_exempt
@@ -498,6 +410,11 @@ def one_click_unsubscribe(request, token):
     the signed token in the URL is the credential.
     """
     if request.method in ('GET', 'HEAD'):
+        # Only redirect validly signed tokens, so arbitrary input is never passed
+        # into AWS_SES_UNSUBSCRIBE_URL.
+        if not unsubscribe.is_valid_token(token):
+            logger.warning("Invalid one-click unsubscribe token on GET")
+            return redirect(settings.HOME_URL)
         return redirect(unsubscribe.build_unsubscribe_url(token))
     if request.method != 'POST':
         return HttpResponseNotAllowed(['GET', 'HEAD', 'POST'])
