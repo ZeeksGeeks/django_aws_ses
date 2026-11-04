@@ -6,3 +6,4 @@ dnspython>=2.1
 
 #Optional DKIM dependency (uncomment if needed)
 #dkimpy>=1.0
+urllib3>=2.6.3 # not directly required, pinned by Snyk to avoid a vulnerability
