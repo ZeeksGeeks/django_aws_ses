@@ -164,6 +164,7 @@ Follow these detailed steps to set up Amazon SES in your AWS account for use wit
    - Create an SNS topic (e.g., `SES_Notifications`) in the SNS console: https://console.aws.amazon.com/sns/.
    - Subscribe your bounce/complaint endpoint (`https://yourdomain.com/aws_ses/bounce/`) to the topic using the HTTPS protocol.
    - In SES, go to "Verified identities," select your email/domain, and configure notifications to send bounces, complaints, and deliveries to the SNS topic.
+   - Set `AWS_SES_BOUNCE_TOPIC_ARNS` to the topic's ARN so the endpoint ignores other topics (see [Bounce Endpoint Security](#bounce-endpoint-security)).
    - Docs: https://docs.aws.amazon.com/ses/latest/dg/monitor-using-notifications.html
 
 5. **(Optional) Configure DKIM Signing**:
@@ -256,6 +257,28 @@ email.send()
 - View bounce/complaint data in the Django Admin or SES dashboard (`/aws_ses/status/`).
 - Configure additional SNS notifications for deliveries in SES console.
 - Docs: https://docs.aws.amazon.com/ses/latest/dg/monitor-sending-activity.html
+
+### Bounce Endpoint Security
+
+The bounce endpoint is a public URL, so every SNS message is checked before anything is stored or a subscription is confirmed:
+
+- **Signature:** the `Signature` is verified against the certificate at `SigningCertURL`. Both `SignatureVersion` 1 (SHA1) and 2 (SHA256) are supported; other versions are rejected.
+- **Certificate host:** the certificate is only downloaded from `https://sns.<region>.amazonaws.com/....pem` (or `sns.<region>.amazonaws.com.cn`). Other `amazonaws.com` hosts, such as S3 buckets, can serve anyone's certificate and are rejected.
+- **Topic:** a valid signature only proves that *some* SNS topic sent the message, and anyone with an AWS account can create a topic and subscribe your endpoint to it. Set `AWS_SES_BOUNCE_TOPIC_ARNS` to your own topic ARNs so messages and subscription requests from other topics are ignored:
+
+  ```python
+  AWS_SES_BOUNCE_TOPIC_ARNS = ['arn:aws:sns:us-east-1:123456789012:SES_Notifications']
+  ```
+
+- Downloaded certificates are cached for 24 hours using Django's cache, and certificate downloads and subscription confirmations time out after 10 seconds.
+- Rejected messages get an empty 200 response and are logged as warnings; nothing is recorded.
+- `SubscriptionConfirmation` messages are confirmed automatically. `UnsubscribeConfirmation` messages are only acknowledged: their `SubscribeURL` would re-subscribe the endpoint.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `AWS_SES_VERIFY_BOUNCE_SIGNATURES` | `True` | Verify SNS signatures. Only turn off for local testing. |
+| `AWS_SES_BOUNCE_TOPIC_ARNS` | `()` | SNS topic ARNs to accept messages from. Empty accepts any topic and logs a warning once per process. |
+| `AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS` | `('amazonaws.com', 'amazon.com')` | Domain suffixes the certificate host must also end with. It can narrow the trusted SNS hosts but not widen them. China regions need `'amazonaws.com.cn'` added. |
 
 ### Generating Unsubscribe Links
 

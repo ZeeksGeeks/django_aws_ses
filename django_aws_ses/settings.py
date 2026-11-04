@@ -15,6 +15,7 @@ DEFAULTS = {
     'DKIM_HEADERS': ('From', 'To', 'Cc', 'Subject'),
     'VERIFY_BOUNCE_SIGNATURES': True,
     'BOUNCE_CERT_DOMAINS': ('amazonaws.com', 'amazon.com'),
+    'BOUNCE_TOPIC_ARNS': (),
     'SES_BOUNCE_LIMIT': 1,
     'SES_BACKEND_DEBUG': False,
     'SES_BACKEND_DEBUG_LOGFILE_FORMATTER': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -53,6 +54,7 @@ __all__ = (
     'BASE_TEMPLATE',
     'VERIFY_BOUNCE_SIGNATURES',
     'BOUNCE_CERT_DOMAINS',
+    'BOUNCE_TOPIC_ARNS',
     'AWS_SES_UNSUBSCRIBE_URL',
     'AWS_SES_UNSUBSCRIBE_BASE_URL',
     'AWS_SES_AUTO_LIST_UNSUBSCRIBE',
@@ -130,6 +132,12 @@ UNSUBSCRIBE_TEMPLATE = getattr(django_settings, 'UNSUBSCRIBE_TEMPLATE', DEFAULTS
 BASE_TEMPLATE = getattr(django_settings, 'BASE_TEMPLATE', DEFAULTS['BASE_TEMPLATE'])
 VERIFY_BOUNCE_SIGNATURES = getattr(django_settings, 'AWS_SES_VERIFY_BOUNCE_SIGNATURES', DEFAULTS['VERIFY_BOUNCE_SIGNATURES'])
 BOUNCE_CERT_DOMAINS = getattr(django_settings, 'AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS', DEFAULTS['BOUNCE_CERT_DOMAINS'])
+# SNS topic ARNs the bounce endpoint accepts messages from. Empty accepts any topic.
+# A single string is treated as a one-item list, so `in` never does a substring match.
+BOUNCE_TOPIC_ARNS = getattr(django_settings, 'AWS_SES_BOUNCE_TOPIC_ARNS', DEFAULTS['BOUNCE_TOPIC_ARNS'])
+if isinstance(BOUNCE_TOPIC_ARNS, str):
+    BOUNCE_TOPIC_ARNS = (BOUNCE_TOPIC_ARNS,)
+BOUNCE_TOPIC_ARNS = tuple(BOUNCE_TOPIC_ARNS or ())
 SES_BOUNCE_LIMIT = getattr(django_settings, 'SES_BOUNCE_LIMIT', DEFAULTS['SES_BOUNCE_LIMIT'])
 SES_BACKEND_DEBUG = getattr(django_settings, 'SES_BACKEND_DEBUG', DEFAULTS['SES_BACKEND_DEBUG'])
 SES_BACKEND_DEBUG_LOGFILE_PATH = getattr(

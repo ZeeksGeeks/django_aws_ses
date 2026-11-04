@@ -19,6 +19,8 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - `AWS_SES_FILTER_EMAIL_UNSUBSCRIBES` (default `False`): also drop recipients whose `EmailUnsubscribe` record is unsubscribed.
 - `AWS_SES_UNSUBSCRIBE_ACCEPT_LEGACY_TOKENS` (default `True`).
 - `runtests.py` / `test_urls.py` for running the test suite without a host project; tests cover Django 3.2, 4.2, 5.2 and 6.0.
+- `AWS_SES_BOUNCE_TOPIC_ARNS` (default `()`, any topic): SNS topic ARNs the bounce endpoint accepts. Messages and subscription requests from other topics are ignored, even when validly signed. When empty, a warning is logged once per process.
+- SNS `SignatureVersion` 2 (SHA256) support on the bounce endpoint. Unknown signature versions are rejected.
 
 ### Changed
 
@@ -38,6 +40,10 @@ The format is based on Keep a Changelog, and this project adheres to Semantic Ve
 - A legacy email-only token used on the user unsubscribe route no longer raises an error.
 - Removed the undeclared `pytz` dependency. `views.py` imported it but it was not in `install_requires`, so a fresh install on Django 4.0+ failed with `ModuleNotFoundError: No module named 'pytz'` when the URLs or views were imported. The SES stats dashboard now uses `django.utils.timezone` to convert timestamps to `TIME_ZONE`.
 - Library-side DKIM signing (`DKIM_*` settings) now works. The backend passed the message to dkimpy as `str`, signing failed with `cannot use a bytes pattern on a string-like object`, and every message was sent unsigned; this predates 0.1.7. Messages are now signed as bytes, so `List-Unsubscribe` / `List-Unsubscribe-Post` are covered by the signature when present. `RawMessage['Data']` passed to SES is now `bytes`.
+- **Security:** SNS signature verification on the bounce endpoint could be bypassed. Any `SigningCertURL` on `*.amazonaws.com` was trusted, including S3 buckets, so anyone could host their own certificate and send validly "signed" fake bounces and complaints. Certificates are now only downloaded over https from `sns.<region>.amazonaws.com` (or `.amazonaws.com.cn`) with a `.pem` path; `AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS` can narrow this but no longer widen it. ([#9](https://github.com/ZeeksGeeks/django_aws_ses/issues/9))
+- Subscription confirmation only requests a `SubscribeURL` on an SNS host, including when signature verification is turned off.
+- An SNS `UnsubscribeConfirmation` no longer re-subscribes the endpoint. The view requested its `SubscribeURL`, which in an unsubscribe message subscribes the endpoint again, so unsubscribing the endpoint from a topic never stuck. It is now only acknowledged.
+- SNS signing certificates are cached for 24 hours by URL instead of downloaded for every message. Certificate downloads and subscription confirmations time out after 10 seconds; a failed download rejects the message instead of raising an error.
 ### Security
 
 - Unsubscribe tokens now carry only the record kind and id, signed with a dedicated salt; the email address no longer appears in unsubscribe links (previously readable in the token, and base64-encoded in the email-only route).
