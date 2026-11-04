@@ -5,3 +5,4 @@ dkimpy
 setuptools 
 wheel 
 twine
+dnspython>=2.9.0 # not directly required, pinned by Snyk to avoid a vulnerability
