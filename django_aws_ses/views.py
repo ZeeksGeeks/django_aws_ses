@@ -162,6 +162,15 @@ def handle_bounce(request):
         logger.warning(f"Invalid SNS notification JSON: {e}")
         return HttpResponseBadRequest("Invalid JSON")
 
+    # SNS always posts a JSON object; anything else (e.g. a list) would fail on .get()
+    if not isinstance(notification, dict):
+        logger.warning("Invalid SNS notification: JSON body is not an object")
+        return HttpResponseBadRequest("Invalid JSON")
+
+    # The topic allowlist applies whether or not signatures are verified
+    if not utils.is_allowed_topic(notification):
+        return HttpResponse()
+
     if settings.VERIFY_BOUNCE_SIGNATURES and not utils.verify_bounce_message(notification):
         logger.warning(f"Unverified SNS notification: Type={notification.get('Type')}")
         return HttpResponse()

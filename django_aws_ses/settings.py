@@ -14,7 +14,7 @@ DEFAULTS = {
     'DKIM_SELECTOR': 'ses',
     'DKIM_HEADERS': ('From', 'To', 'Cc', 'Subject'),
     'VERIFY_BOUNCE_SIGNATURES': True,
-    'BOUNCE_CERT_DOMAINS': ('amazonaws.com', 'amazon.com'),
+    'BOUNCE_CERT_DOMAINS': ('amazonaws.com', 'amazonaws.com.cn'),
     'BOUNCE_TOPIC_ARNS': (),
     'SES_BOUNCE_LIMIT': 1,
     'SES_BACKEND_DEBUG': False,

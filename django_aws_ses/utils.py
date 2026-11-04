@@ -101,6 +101,30 @@ def is_sns_url(url):
     return bool(SNS_HOST_RE.match(host))
 
 
+def is_allowed_topic(notification):
+    """
+    Returns True if the SNS message's TopicArn is in BOUNCE_TOPIC_ARNS, or if no
+    topics are configured (any topic is accepted, with a one-time warning).
+    Checked separately from the signature: a valid signature only proves that some
+    SNS topic sent the message, and anyone can create one.
+    """
+    global _warned_no_topic_arns
+    topic_arns = settings.BOUNCE_TOPIC_ARNS
+    if not topic_arns:
+        if not _warned_no_topic_arns:
+            logger.warning(
+                "AWS_SES_BOUNCE_TOPIC_ARNS is not set: SNS messages from any topic are accepted. "
+                "Set it to your SNS topic ARNs."
+            )
+            _warned_no_topic_arns = True
+        return True
+    topic_arn = notification.get('TopicArn')
+    if topic_arn not in topic_arns:
+        logger.warning("SNS message from unexpected TopicArn: %s", topic_arn)
+        return False
+    return True
+
+
 class BounceMessageVerifier(object):
     """
     Utility class for validating AWS SES/SNS bounce messages.
@@ -118,12 +142,6 @@ class BounceMessageVerifier(object):
         Returns True if the signature is valid, False otherwise.
         """
         if self._verified is None:
-            # Only accept messages from the configured topics. A valid signature only
-            # proves that some SNS topic sent the message, and anyone can create one.
-            if not self._is_allowed_topic():
-                self._verified = False
-                return self._verified
-
             # Pick the hash for the message's SignatureVersion
             signature_version = str(self._data.get('SignatureVersion', '1'))
             hash_class = SNS_SIGNATURE_HASHES.get(signature_version)
@@ -239,36 +257,18 @@ class BounceMessageVerifier(object):
 
         return self._certificate
 
-    def _is_allowed_topic(self):
-        """
-        Returns True if the message's TopicArn is in BOUNCE_TOPIC_ARNS, or if no
-        topics are configured (any topic is accepted, with a one-time warning).
-        """
-        global _warned_no_topic_arns
-        topic_arns = settings.BOUNCE_TOPIC_ARNS
-        if not topic_arns:
-            if not _warned_no_topic_arns:
-                logger.warning(
-                    "AWS_SES_BOUNCE_TOPIC_ARNS is not set: SNS messages from any topic are accepted. "
-                    "Set it to your SNS topic ARNs."
-                )
-                _warned_no_topic_arns = True
-            return True
-        topic_arn = self._data.get('TopicArn')
-        if topic_arn not in topic_arns:
-            logger.warning("SNS message from unexpected TopicArn: %s", topic_arn)
-            return False
-        return True
-
     def _get_cert_url(self):
         """
         Retrieves the certificate URL from the message, ensuring it comes from a trusted domain.
         Returns None if the URL is untrusted or invalid.
         """
         cert_url = self._data.get('SigningCertURL')
-        if is_sns_url(cert_url) and urlparse(cert_url).path.endswith('.pem'):
+        url_obj = urlparse(cert_url) if is_sns_url(cert_url) else None
+        # Real SNS certificate URLs have no query string or fragment. Rejecting them keeps
+        # the certificate cache (keyed by URL) from being bypassed with ?n=1, ?n=2, ...
+        if url_obj and url_obj.path.endswith('.pem') and not (url_obj.params or url_obj.query or url_obj.fragment):
             # BOUNCE_CERT_DOMAINS can narrow the SNS hosts trusted, but never widen them
-            host_parts = urlparse(cert_url).hostname.split('.')
+            host_parts = url_obj.hostname.split('.')
             for trusted_domain in settings.BOUNCE_CERT_DOMAINS:
                 parts = trusted_domain.split('.')
                 if host_parts[-len(parts):] == parts:

@@ -1021,12 +1021,10 @@ class StatsToListTests(TestCase):
 # ---------------------------------------------------------------------------
 # SNS signature verification on the bounce endpoint
 # ---------------------------------------------------------------------------
-import base64
-
 import requests
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.x509.oid import NameOID
 from django.core.cache import cache
 
@@ -1200,6 +1198,8 @@ class SnsSignatureVerificationTests(TestCase):
             ('user-info trick', 'https://sns.us-east-1.amazonaws.com@evil.example.com/cert.pem'),
             ('look-alike host', 'https://sns.us-east-1.amazonaws.com.evil.example.com/cert.pem'),
             ('other domain', 'https://evil.example.com/cert.pem'),
+            ('query string (cache bypass)', SNS_CERT_URL + '?n=1'),
+            ('fragment', SNS_CERT_URL + '#n=1'),
         ]
         with patch('requests.get', return_value=_cert_response(self.pem)) as mock_get:
             for label, url in untrusted:
@@ -1207,27 +1207,46 @@ class SnsSignatureVerificationTests(TestCase):
                 self.assertFalse(verify_bounce_message(self._notification(SigningCertURL=url)), label)
             mock_get.assert_not_called()
 
-        print("  → China region host is accepted")
+        cn_url = 'https://sns.cn-north-1.amazonaws.com.cn/SimpleNotificationService-test.pem'
+        print("  → China region host is accepted with the default trusted domains")
         with patch('requests.get', return_value=_cert_response(self.pem)):
-            cn_url = 'https://sns.cn-north-1.amazonaws.com.cn/SimpleNotificationService-test.pem'
-            with patch.object(aws_ses_settings, 'BOUNCE_CERT_DOMAINS', ('amazonaws.com.cn',)):
-                self.assertTrue(verify_bounce_message(self._notification(SigningCertURL=cn_url)))
+            self.assertTrue(verify_bounce_message(self._notification(SigningCertURL=cn_url)))
+        print("  → AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS can narrow the trusted hosts")
+        cache.clear()
+        with patch('requests.get', return_value=_cert_response(self.pem)), \
+                patch.object(aws_ses_settings, 'BOUNCE_CERT_DOMAINS', ('amazonaws.com',)):
+            self.assertFalse(verify_bounce_message(self._notification(SigningCertURL=cn_url)))
         print("  ✓ Only SNS-hosted certificates are trusted")
 
     def test_topic_arn_allowlist(self):
         """Test AWS_SES_BOUNCE_TOPIC_ARNS rejects other topics - expects rejection"""
         print("\n⚠ Testing TopicArn allowlist (expecting rejection for other topics)")
-        with patch('requests.get', return_value=_cert_response(self.pem)), \
-                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
+        with patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
             print("  → Configured topic accepted")
-            self.assertTrue(verify_bounce_message(self._notification()))
-            print("  → Validly signed message from another topic rejected")
-            self.assertFalse(verify_bounce_message(self._notification(topic_arn=OTHER_TOPIC_ARN)))
+            self.assertTrue(aws_ses_utils.is_allowed_topic(self._notification()))
+            print("  → Message from another topic rejected")
+            self.assertFalse(aws_ses_utils.is_allowed_topic(self._notification(topic_arn=OTHER_TOPIC_ARN)))
         print("  → Empty allowlist accepts any topic")
-        with patch('requests.get', return_value=_cert_response(self.pem)), \
-                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', ()):
-            self.assertTrue(verify_bounce_message(self._notification(topic_arn=OTHER_TOPIC_ARN)))
+        with patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', ()):
+            self.assertTrue(aws_ses_utils.is_allowed_topic(self._notification(topic_arn=OTHER_TOPIC_ARN)))
         print("  ✓ TopicArn allowlist enforced")
+
+    def test_topic_arn_allowlist_without_signature_verification(self):
+        """Test the topic allowlist still applies with verification off - expects nothing stored"""
+        print("\n⚠ Testing TopicArn allowlist with AWS_SES_VERIFY_BOUNCE_SIGNATURES off (expecting rejection)")
+        with patch('requests.get') as mock_get, \
+                patch.object(aws_ses_settings, 'VERIFY_BOUNCE_SIGNATURES', False), \
+                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
+            print("  → Bounce from another topic (200, nothing stored)")
+            self.assertEqual(self._post(self._notification(topic_arn=OTHER_TOPIC_ARN)).status_code, 200)
+            self.assertFalse(BounceRecord.objects.exists())
+            print("  → Subscription from another topic is not confirmed")
+            self.assertEqual(self._post(self._subscription(topic_arn=OTHER_TOPIC_ARN)).status_code, 200)
+            mock_get.assert_not_called()
+            print("  → Bounce from the configured topic is stored")
+            self.assertEqual(self._post(self._notification()).status_code, 200)
+            self.assertTrue(BounceRecord.objects.filter(email='bounced@example.com').exists())
+        print("  ✓ Topic allowlist enforced without signature verification")
 
     def test_certificate_cached_and_fetched_with_timeout(self):
         """Test the signing certificate is downloaded once, with a timeout"""
@@ -1299,6 +1318,16 @@ class SnsSignatureVerificationTests(TestCase):
             self.assertEqual(self._post(self._subscription(subscribe_url=evil_url)).status_code, 200)
             mock_get.assert_not_called()
         print("  ✓ Subscription confirmation restricted")
+
+    def test_non_object_json_body_rejected(self):
+        """Test a JSON body that is not an object - expects Bad Request, not a server error"""
+        print("\n⚠ Testing non-object JSON bodies (expecting Bad Request errors)")
+        for label, body in (('list', '[]'), ('string', '"hello"'), ('number', '42'), ('null', 'null')):
+            print(f"  → JSON {label} body (400 expected)")
+            request = self.factory.post('/aws_ses/bounce/', data=body, content_type='application/json')
+            with patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
+                self.assertEqual(handle_bounce(request).status_code, 400, label)
+        print("  ✓ Non-object bodies rejected with 400")
 
     def test_unsubscribe_confirmation_not_resubscribed(self):
         """Test an UnsubscribeConfirmation is acknowledged without re-subscribing"""
