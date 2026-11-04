@@ -175,6 +175,18 @@ def _mock_ses():
     return mock_ses
 
 
+def _send_raw(message, **backend_kwargs):
+    """Send `message` through SESBackend with SES mocked; return (sent, raw bytes or None)."""
+    mock_ses = _mock_ses()
+    with patch('boto3.client', return_value=mock_ses), \
+            patch('django_aws_ses.utils.validater_email_domain', return_value=True):
+        sent, _ = SESBackend(**backend_kwargs).send_messages([message])
+    raw = None
+    if mock_ses.send_raw_email.called:
+        raw = mock_ses.send_raw_email.call_args.kwargs['RawMessage']['Data']
+    return sent, raw
+
+
 def _header_block(raw, name):
     """Return the header line for `name` plus any folded continuation lines."""
     lines = raw.splitlines()
@@ -612,14 +624,8 @@ class BackendUnsubscribeHeaderTests(_UnsubscribeFixturesMixin, TestCase):
     """Test List-Unsubscribe rendering and automatic headers in SESBackend"""
 
     def send(self, message):
-        mock_ses = _mock_ses()
-        with patch('boto3.client', return_value=mock_ses), \
-                patch('django_aws_ses.utils.validater_email_domain', return_value=True):
-            sent, _ = SESBackend().send_messages([message])
-        raw = None
-        if mock_ses.send_raw_email.called:
-            raw = mock_ses.send_raw_email.call_args.kwargs['RawMessage']['Data']
-        return sent, raw
+        sent, raw = _send_raw(message)
+        return sent, None if raw is None else raw.decode()
 
     def test_long_header_is_one_plain_line(self):
         """Test a long List-Unsubscribe header is not RFC 2047 encoded or folded"""
@@ -746,18 +752,106 @@ class BackendUnsubscribeHeaderTests(_UnsubscribeFixturesMixin, TestCase):
         print("  → DKIM header list correct")
 
 
+import base64
+from unittest import skipUnless
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+try:
+    import dkim
+except ImportError:
+    dkim = None
+
+DKIM_DOMAIN = 'example.com'
+DKIM_SELECTOR = 'ses'
+
+
+def _signed_headers(raw):
+    """Return the lower-cased header names in the DKIM-Signature h= tag."""
+    signature = ''.join(_header_block(raw.decode(), 'DKIM-Signature'))
+    tags = dict(
+        tag.strip().split('=', 1) for tag in signature.split(':', 1)[1].split(';') if '=' in tag
+    )
+    return [h.strip().lower() for h in ''.join(tags['h'].split()).split(':')]
+
+
+@skipUnless(dkim, 'dkimpy not installed')
+@patch.object(aws_ses_settings, 'AWS_SES_UNSUBSCRIBE_BASE_URL', ONE_CLICK_BASE)
+class DkimSigningTests(_UnsubscribeFixturesMixin, TestCase):
+    """Test library-side DKIM signing with dkimpy, verified against the matching public key"""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.private_key = key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        ).decode()
+        public_key = base64.b64encode(key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo,
+        )).decode()
+        cls.dns_record = f'v=DKIM1; k=rsa; p={public_key}'.encode()
+
+    def dnsfunc(self, name, timeout=5):
+        """Stand-in DNS lookup serving the test public key for ses._domainkey.example.com."""
+        if name == f'{DKIM_SELECTOR}._domainkey.{DKIM_DOMAIN}.'.encode():
+            return self.dns_record
+        return None
+
+    def send(self, message, **backend_kwargs):
+        kwargs = {'dkim_domain': DKIM_DOMAIN, 'dkim_key': self.private_key, 'dkim_selector': DKIM_SELECTOR}
+        kwargs.update(backend_kwargs)
+        return _send_raw(message, **kwargs)
+
+    def test_message_is_signed_and_verifies(self):
+        """Test the sent message carries a DKIM signature that verifies"""
+        print("\n✓ Testing library-side DKIM signing")
+        print("  → Sending message with DKIM domain, key and selector set")
+        sent, raw = self.send(EmailMessage('Hi', 'Hello', 'from@example.com', ['alice@example.com']))
+        self.assertEqual(sent, 1)
+        self.assertIsInstance(raw, bytes)
+        self.assertTrue(raw.startswith(b'DKIM-Signature:'))
+        print("  → Verifying signature against the public key")
+        self.assertTrue(dkim.verify(raw, dnsfunc=self.dnsfunc))
+        self.assertEqual(_signed_headers(raw), ['from', 'to', 'cc', 'subject'])
+        print("  → Signature verified, default headers signed")
+
+    def test_list_unsubscribe_headers_are_signed(self):
+        """Test List-Unsubscribe headers are covered by the DKIM signature when present"""
+        print("\n✓ Testing DKIM signature covers List-Unsubscribe headers")
+        message = EmailMessage('Hi', 'Hello', 'from@example.com', ['alice@example.com'],
+                               headers=unsubscribe.list_unsubscribe_headers(self.addon))
+        sent, raw = self.send(message)
+        self.assertEqual(sent, 1)
+        self.assertTrue(dkim.verify(raw, dnsfunc=self.dnsfunc))
+        self.assertEqual(_signed_headers(raw),
+                         ['from', 'to', 'cc', 'subject', 'list-unsubscribe', 'list-unsubscribe-post'])
+        print("  → Changing List-Unsubscribe after signing breaks verification")
+        tampered = raw.replace(b'List-Unsubscribe: <', b'List-Unsubscribe: <https://evil.example.com/>, <', 1)
+        self.assertNotEqual(tampered, raw)
+        self.assertFalse(dkim.verify(tampered, dnsfunc=self.dnsfunc))
+        print("  → List-Unsubscribe headers signed")
+
+    def test_without_key_sends_unsigned(self):
+        """Test a message is sent unsigned when no DKIM key is configured"""
+        print("\n⚠ Testing send without a DKIM key (unsigned message expected)")
+        with patch.object(aws_ses_settings, 'DKIM_PRIVATE_KEY', None):
+            sent, raw = self.send(EmailMessage('Hi', 'Hello', 'from@example.com', ['alice@example.com']),
+                                  dkim_key=None)
+        self.assertEqual(sent, 1)
+        self.assertIsInstance(raw, bytes)
+        self.assertNotIn(b'DKIM-Signature', raw)
+        print("  ✓ Message sent unsigned")
+
+
 class TransactionalMessageTests(_UnsubscribeFixturesMixin, TestCase):
     """Test the per-message transactional opt-out of the unsubscribe filter"""
 
     def send(self, message):
-        mock_ses = _mock_ses()
-        with patch('boto3.client', return_value=mock_ses), \
-                patch('django_aws_ses.utils.validater_email_domain', return_value=True):
-            sent, _ = SESBackend().send_messages([message])
-        raw = None
-        if mock_ses.send_raw_email.called:
-            raw = mock_ses.send_raw_email.call_args.kwargs['RawMessage']['Data']
-        return sent, raw
+        sent, raw = _send_raw(message)
+        return sent, None if raw is None else raw.decode()
 
     def setUp(self):
         super().setUp()

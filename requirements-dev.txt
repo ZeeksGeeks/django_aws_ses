@@ -1,6 +1,7 @@
 pytest 
 pytest-django 
 mock
+dkimpy
 setuptools 
 wheel 
 twine

@@ -7,6 +7,7 @@ import django
 from django.core.cache import cache
 from django.core.mail.backends.base import BaseEmailBackend
 from django.core.exceptions import ImproperlyConfigured
+from django.utils.encoding import force_bytes
 from requests.exceptions import RequestException as ResponseError
 
 from . import settings
@@ -47,14 +48,14 @@ def dkim_sign(message, dkim_domain=None, dkim_key=None, dkim_selector=None, dkim
     """Sign an email message with DKIM if the package and settings are available.
 
     Args:
-        message (str): The email message as a string.
+        message (bytes): The serialized email message.
         dkim_domain (str): DKIM domain for signing.
         dkim_key (str): DKIM private key.
         dkim_selector (str): DKIM selector.
         dkim_headers (tuple): Headers to include in DKIM signing.
 
     Returns:
-        str: The signed message or original message if signing fails.
+        bytes: The signed message or original message if signing fails.
     """
     try:
         import dkim
@@ -67,12 +68,15 @@ def dkim_sign(message, dkim_domain=None, dkim_key=None, dkim_selector=None, dkim
         return message
 
     try:
+        # dkimpy only accepts bytes for the message, selector, domain, key and header names.
         sig = dkim.sign(
             message,
-            dkim_selector,
-            dkim_domain,
-            dkim_key,
-            include_headers=dkim_headers
+            force_bytes(dkim_selector),
+            force_bytes(dkim_domain),
+            force_bytes(dkim_key),
+            include_headers=None if dkim_headers is None else [force_bytes(h) for h in dkim_headers],
+            # Fold the DKIM-Signature header with the same line ending as the message.
+            linesep=b'\n',
         )
         return sig + message
     except Exception as e:
@@ -288,7 +292,7 @@ class SESBackend(BaseEmailBackend):
                     Source=source or message.from_email,
                     Destinations=message.recipients(),
                     RawMessage={'Data': dkim_sign(
-                        mime_message.as_string(),
+                        mime_message.as_bytes(),
                         dkim_key=self.dkim_key,
                         dkim_domain=self.dkim_domain,
                         dkim_selector=self.dkim_selector,
