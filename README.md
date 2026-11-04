@@ -263,8 +263,8 @@ email.send()
 The bounce endpoint is a public URL, so every SNS message is checked before anything is stored or a subscription is confirmed:
 
 - **Signature:** the `Signature` is verified against the certificate at `SigningCertURL`. Both `SignatureVersion` 1 (SHA1) and 2 (SHA256) are supported; other versions are rejected.
-- **Certificate host:** the certificate is only downloaded from `https://sns.<region>.amazonaws.com/....pem` (or `sns.<region>.amazonaws.com.cn`). Other `amazonaws.com` hosts, such as S3 buckets, can serve anyone's certificate and are rejected.
-- **Topic:** a valid signature only proves that *some* SNS topic sent the message, and anyone with an AWS account can create a topic and subscribe your endpoint to it. Set `AWS_SES_BOUNCE_TOPIC_ARNS` to your own topic ARNs so messages and subscription requests from other topics are ignored:
+- **Certificate host:** the certificate is only downloaded from `https://sns.<region>.amazonaws.com/....pem` (or `sns.<region>.amazonaws.com.cn`), with no query string or fragment. Other `amazonaws.com` hosts, such as S3 buckets, can serve anyone's certificate and are rejected.
+- **Topic:** a valid signature only proves that *some* SNS topic sent the message, and anyone with an AWS account can create a topic and subscribe your endpoint to it. Set `AWS_SES_BOUNCE_TOPIC_ARNS` to your own topic ARNs so messages and subscription requests from other topics are ignored. The topic check runs before, and independently of, the signature check, so it also applies when `AWS_SES_VERIFY_BOUNCE_SIGNATURES` is off:
 
   ```python
   AWS_SES_BOUNCE_TOPIC_ARNS = ['arn:aws:sns:us-east-1:123456789012:SES_Notifications']
@@ -278,7 +278,7 @@ The bounce endpoint is a public URL, so every SNS message is checked before anyt
 |---|---|---|
 | `AWS_SES_VERIFY_BOUNCE_SIGNATURES` | `True` | Verify SNS signatures. Only turn off for local testing. |
 | `AWS_SES_BOUNCE_TOPIC_ARNS` | `()` | SNS topic ARNs to accept messages from. Empty accepts any topic and logs a warning once per process. |
-| `AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS` | `('amazonaws.com', 'amazon.com')` | Domain suffixes the certificate host must also end with. It can narrow the trusted SNS hosts but not widen them. China regions need `'amazonaws.com.cn'` added. |
+| `AWS_SNS_BOUNCE_CERT_TRUSTED_DOMAINS` | `('amazonaws.com', 'amazonaws.com.cn')` | Domain suffixes the certificate host must also end with. It can narrow the trusted SNS hosts (e.g. `('amazonaws.com',)` to reject China regions) but not widen them. |
 
 ### Generating Unsubscribe Links
 
