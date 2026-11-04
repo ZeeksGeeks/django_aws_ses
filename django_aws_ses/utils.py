@@ -1,9 +1,11 @@
 import base64
+import hashlib
 import re
 import dns.resolver
 from email.utils import parseaddr
 from io import StringIO
 from urllib.parse import urlparse
+from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.encoding import smart_str
 from django.dispatch.dispatcher import receiver
@@ -61,6 +63,44 @@ def is_transactional(message):
             return str(value).strip().lower() not in ('', '0', 'false', 'no')
     return False
 
+
+# SNS signing certificates and SubscribeURLs are served from sns.<region>.amazonaws.com
+# (sns.<region>.amazonaws.com.cn in China). Other *.amazonaws.com hosts, such as S3
+# buckets, can serve anyone's content, so a suffix match on amazonaws.com is not enough.
+SNS_HOST_RE = re.compile(r'^sns\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$')
+
+# Seconds to wait for SNS when downloading a signing certificate or confirming a subscription.
+SNS_REQUEST_TIMEOUT = 10
+
+# Seconds a downloaded signing certificate is cached, keyed by its URL.
+SNS_CERT_CACHE_TIMEOUT = 60 * 60 * 24
+
+# Hash used for each SNS SignatureVersion.
+SNS_SIGNATURE_HASHES = {
+    '1': hashes.SHA1,
+    '2': hashes.SHA256,
+}
+
+_warned_no_topic_arns = False
+
+
+def is_sns_url(url):
+    """
+    Returns True if `url` is an https URL on an SNS host (sns.<region>.amazonaws.com).
+    URLs with a username/password part are rejected.
+    """
+    if not isinstance(url, str):
+        return False
+    try:
+        url_obj = urlparse(url)
+        host = url_obj.hostname
+    except ValueError:
+        return False
+    if url_obj.scheme != 'https' or not host or url_obj.username or url_obj.password:
+        return False
+    return bool(SNS_HOST_RE.match(host))
+
+
 class BounceMessageVerifier(object):
     """
     Utility class for validating AWS SES/SNS bounce messages.
@@ -78,6 +118,20 @@ class BounceMessageVerifier(object):
         Returns True if the signature is valid, False otherwise.
         """
         if self._verified is None:
+            # Only accept messages from the configured topics. A valid signature only
+            # proves that some SNS topic sent the message, and anyone can create one.
+            if not self._is_allowed_topic():
+                self._verified = False
+                return self._verified
+
+            # Pick the hash for the message's SignatureVersion
+            signature_version = str(self._data.get('SignatureVersion', '1'))
+            hash_class = SNS_SIGNATURE_HASHES.get(signature_version)
+            if hash_class is None:
+                logger.warning("Unsupported SNS SignatureVersion: %s", signature_version)
+                self._verified = False
+                return self._verified
+
             # Extract and decode the signature
             signature = self._data.get('Signature')
             if not signature:
@@ -113,7 +167,7 @@ class BounceMessageVerifier(object):
                     signature,
                     sign_bytes,
                     padding.PKCS1v15(),
-                    hashes.SHA1()  # AWS SNS uses SHA1
+                    hash_class()  # SignatureVersion 1 is SHA1, 2 is SHA256
                 )
                 self._verified = True
             except InvalidSignature:
@@ -156,20 +210,55 @@ class BounceMessageVerifier(object):
                     "Install with `pip install cryptography`."
                 )
 
+            # Use the cached certificate if there is one; SNS signing certs rarely change
+            cache_key = 'django_aws_ses_sns_cert:' + hashlib.sha256(cert_url.encode('utf-8')).hexdigest()
+            pem = cache.get(cache_key)
+            cached = pem is not None
+
             # Fetch the certificate
-            response = requests.get(cert_url)
-            if response.status_code != 200:
-                logger.warning("Failed to download certificate from %s: %s", cert_url, response.status_code)
-                return None
+            if not cached:
+                try:
+                    response = requests.get(cert_url, timeout=SNS_REQUEST_TIMEOUT)
+                except requests.RequestException as e:
+                    logger.warning("Failed to download certificate from %s: %s", cert_url, e)
+                    return None
+                if response.status_code != 200:
+                    logger.warning("Failed to download certificate from %s: %s", cert_url, response.status_code)
+                    return None
+                pem = response.content
 
             # Load the certificate
             try:
-                self._certificate = x509.load_pem_x509_certificate(response.content, default_backend())
+                self._certificate = x509.load_pem_x509_certificate(pem, default_backend())
             except Exception as e:
                 logger.warning("Failed to load certificate from %s: %s", cert_url, e)
                 return None
 
+            if not cached:
+                cache.set(cache_key, pem, SNS_CERT_CACHE_TIMEOUT)
+
         return self._certificate
+
+    def _is_allowed_topic(self):
+        """
+        Returns True if the message's TopicArn is in BOUNCE_TOPIC_ARNS, or if no
+        topics are configured (any topic is accepted, with a one-time warning).
+        """
+        global _warned_no_topic_arns
+        topic_arns = settings.BOUNCE_TOPIC_ARNS
+        if not topic_arns:
+            if not _warned_no_topic_arns:
+                logger.warning(
+                    "AWS_SES_BOUNCE_TOPIC_ARNS is not set: SNS messages from any topic are accepted. "
+                    "Set it to your SNS topic ARNs."
+                )
+                _warned_no_topic_arns = True
+            return True
+        topic_arn = self._data.get('TopicArn')
+        if topic_arn not in topic_arns:
+            logger.warning("SNS message from unexpected TopicArn: %s", topic_arn)
+            return False
+        return True
 
     def _get_cert_url(self):
         """
@@ -177,11 +266,12 @@ class BounceMessageVerifier(object):
         Returns None if the URL is untrusted or invalid.
         """
         cert_url = self._data.get('SigningCertURL')
-        if cert_url and cert_url.startswith('https://'):
-            url_obj = urlparse(cert_url)
+        if is_sns_url(cert_url) and urlparse(cert_url).path.endswith('.pem'):
+            # BOUNCE_CERT_DOMAINS can narrow the SNS hosts trusted, but never widen them
+            host_parts = urlparse(cert_url).hostname.split('.')
             for trusted_domain in settings.BOUNCE_CERT_DOMAINS:
                 parts = trusted_domain.split('.')
-                if url_obj.netloc.split('.')[-len(parts):] == parts:
+                if host_parts[-len(parts):] == parts:
                     return cert_url
             logger.warning("Untrusted certificate URL: %s", cert_url)
         else:

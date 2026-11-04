@@ -1016,3 +1016,298 @@ class StatsToListTests(TestCase):
         self.assertEqual(result[1]['Timestamp'].hour, 13)
         self.assertEqual(result[0]['Timestamp'].utcoffset(), datetime.timedelta(hours=-5))
         print("  → Datapoints localized correctly")
+
+
+# ---------------------------------------------------------------------------
+# SNS signature verification on the bounce endpoint
+# ---------------------------------------------------------------------------
+import base64
+
+import requests
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.x509.oid import NameOID
+from django.core.cache import cache
+
+from . import utils as aws_ses_utils
+from .utils import verify_bounce_message
+
+SNS_CERT_URL = 'https://sns.us-east-1.amazonaws.com/SimpleNotificationService-test.pem'
+SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:123456789012:ses-notifications'
+OTHER_TOPIC_ARN = 'arn:aws:sns:us-east-1:999999999999:attacker-topic'
+SNS_SUBSCRIBE_URL = (
+    'https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription'
+    '&TopicArn=arn:aws:sns:us-east-1:123456789012:ses-notifications&Token=abc'
+)
+
+# Fields SNS signs for each message type, in signing order (AWS SNS docs).
+_SNS_SIGNED_FIELDS = {
+    'Notification': ('Message', 'MessageId', 'Subject', 'Timestamp', 'TopicArn', 'Type'),
+    'SubscriptionConfirmation': (
+        'Message', 'MessageId', 'SubscribeURL', 'Timestamp', 'Token', 'TopicArn', 'Type',
+    ),
+    'UnsubscribeConfirmation': (
+        'Message', 'MessageId', 'SubscribeURL', 'Timestamp', 'Token', 'TopicArn', 'Type',
+    ),
+}
+
+
+def _make_signing_cert():
+    """Return (private key, PEM bytes) for a throwaway self-signed certificate."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'sns.amazonaws.com')])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    return key, cert.public_bytes(serialization.Encoding.PEM)
+
+
+def _cert_response(pem):
+    response = Mock()
+    response.status_code = 200
+    response.content = pem
+    response.raise_for_status.return_value = None
+    return response
+
+
+class SnsSignatureVerificationTests(TestCase):
+    """Test SNS signature verification on bounce/complaint notifications"""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.key, cls.pem = _make_signing_cert()
+
+    def setUp(self):
+        cache.clear()
+        self.factory = RequestFactory()
+
+    def _sign(self, payload, version='1'):
+        """Sign `payload` in place the way SNS does, building the string-to-sign independently."""
+        lines = []
+        for field in _SNS_SIGNED_FIELDS[payload['Type']]:
+            if field in payload:
+                lines.append(f"{field}\n{payload[field]}\n")
+        hash_class = hashes.SHA256 if version == '2' else hashes.SHA1
+        signature = self.key.sign(''.join(lines).encode('utf-8'), padding.PKCS1v15(), hash_class())
+        payload['SignatureVersion'] = version
+        payload['Signature'] = base64.b64encode(signature).decode('ascii')
+        return payload
+
+    def _notification(self, event='Bounce', topic_arn=SNS_TOPIC_ARN, version='1', **overrides):
+        if event == 'Bounce':
+            message = {
+                'notificationType': 'Bounce',
+                'mail': {'destination': ['bounced@example.com']},
+                'bounce': {
+                    'feedbackId': 'feedback-1',
+                    'bounceType': 'Permanent',
+                    'bounceSubType': 'General',
+                    'bouncedRecipients': [{'emailAddress': 'bounced@example.com'}],
+                },
+            }
+        else:
+            message = {
+                'notificationType': 'Complaint',
+                'mail': {'destination': ['complained@example.com']},
+                'complaint': {
+                    'feedbackId': 'feedback-2',
+                    'complaintFeedbackType': 'abuse',
+                    'complainedRecipients': [{'emailAddress': 'complained@example.com'}],
+                },
+            }
+        payload = {
+            'Type': 'Notification',
+            'MessageId': 'message-1',
+            'TopicArn': topic_arn,
+            'Message': json.dumps(message),
+            'Timestamp': '2026-11-03T12:00:00.000Z',
+            'SigningCertURL': SNS_CERT_URL,
+        }
+        payload.update(overrides)
+        return self._sign(payload, version)
+
+    def _subscription(self, topic_arn=SNS_TOPIC_ARN, subscribe_url=SNS_SUBSCRIBE_URL,
+                      message_type='SubscriptionConfirmation'):
+        return self._sign({
+            'Type': message_type,
+            'MessageId': 'message-2',
+            'Token': 'abc',
+            'TopicArn': topic_arn,
+            'Message': 'You have chosen to subscribe to the topic.',
+            'SubscribeURL': subscribe_url,
+            'Timestamp': '2026-11-03T12:00:00.000Z',
+            'SigningCertURL': SNS_CERT_URL,
+        })
+
+    def _post(self, payload):
+        request = self.factory.post('/aws_ses/bounce/', data=payload, content_type='application/json')
+        return handle_bounce(request)
+
+    def test_valid_signatures_verify(self):
+        """Test SignatureVersion 1 (SHA1) and 2 (SHA256) messages verify"""
+        print("\n✓ Testing valid SNS signatures verify")
+        with patch('requests.get', return_value=_cert_response(self.pem)):
+            print("  → SignatureVersion 1 (SHA1)")
+            self.assertTrue(verify_bounce_message(self._notification(version='1')))
+            print("  → SignatureVersion 2 (SHA256)")
+            self.assertTrue(verify_bounce_message(self._notification(version='2')))
+            print("  → SubscriptionConfirmation")
+            self.assertTrue(verify_bounce_message(self._subscription()))
+        print("  → All signatures verified")
+
+    def test_invalid_signatures_rejected(self):
+        """Test tampered, missing and unsupported signatures - expects rejection"""
+        print("\n⚠ Testing invalid signatures (expecting rejection)")
+        with patch('requests.get', return_value=_cert_response(self.pem)):
+            print("  → Message changed after signing")
+            payload = self._notification()
+            payload['Message'] = payload['Message'].replace('bounced@', 'victim@')
+            self.assertFalse(verify_bounce_message(payload))
+
+            print("  → Signature missing")
+            payload = self._notification()
+            del payload['Signature']
+            self.assertFalse(verify_bounce_message(payload))
+
+            print("  → Unsupported SignatureVersion")
+            payload = self._notification()
+            payload['SignatureVersion'] = '3'
+            self.assertFalse(verify_bounce_message(payload))
+
+            print("  → Version 1 signature labelled as version 2")
+            payload = self._notification(version='1')
+            payload['SignatureVersion'] = '2'
+            self.assertFalse(verify_bounce_message(payload))
+        print("  ✓ Invalid signatures rejected")
+
+    def test_untrusted_cert_urls_rejected(self):
+        """Test certificates outside sns.<region>.amazonaws.com are never downloaded - expects rejection"""
+        print("\n⚠ Testing untrusted SigningCertURLs (expecting rejection, no download)")
+        untrusted = [
+            ('S3 bucket on amazonaws.com', 'https://attacker.s3.amazonaws.com/cert.pem'),
+            ('plain http', 'http://sns.us-east-1.amazonaws.com/cert.pem'),
+            ('not a .pem path', 'https://sns.us-east-1.amazonaws.com/cert.txt'),
+            ('user-info trick', 'https://sns.us-east-1.amazonaws.com@evil.example.com/cert.pem'),
+            ('look-alike host', 'https://sns.us-east-1.amazonaws.com.evil.example.com/cert.pem'),
+            ('other domain', 'https://evil.example.com/cert.pem'),
+        ]
+        with patch('requests.get', return_value=_cert_response(self.pem)) as mock_get:
+            for label, url in untrusted:
+                print(f"  → {label}")
+                self.assertFalse(verify_bounce_message(self._notification(SigningCertURL=url)), label)
+            mock_get.assert_not_called()
+
+        print("  → China region host is accepted")
+        with patch('requests.get', return_value=_cert_response(self.pem)):
+            cn_url = 'https://sns.cn-north-1.amazonaws.com.cn/SimpleNotificationService-test.pem'
+            with patch.object(aws_ses_settings, 'BOUNCE_CERT_DOMAINS', ('amazonaws.com.cn',)):
+                self.assertTrue(verify_bounce_message(self._notification(SigningCertURL=cn_url)))
+        print("  ✓ Only SNS-hosted certificates are trusted")
+
+    def test_topic_arn_allowlist(self):
+        """Test AWS_SES_BOUNCE_TOPIC_ARNS rejects other topics - expects rejection"""
+        print("\n⚠ Testing TopicArn allowlist (expecting rejection for other topics)")
+        with patch('requests.get', return_value=_cert_response(self.pem)), \
+                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
+            print("  → Configured topic accepted")
+            self.assertTrue(verify_bounce_message(self._notification()))
+            print("  → Validly signed message from another topic rejected")
+            self.assertFalse(verify_bounce_message(self._notification(topic_arn=OTHER_TOPIC_ARN)))
+        print("  → Empty allowlist accepts any topic")
+        with patch('requests.get', return_value=_cert_response(self.pem)), \
+                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', ()):
+            self.assertTrue(verify_bounce_message(self._notification(topic_arn=OTHER_TOPIC_ARN)))
+        print("  ✓ TopicArn allowlist enforced")
+
+    def test_certificate_cached_and_fetched_with_timeout(self):
+        """Test the signing certificate is downloaded once, with a timeout"""
+        print("\n✓ Testing certificate caching and download timeout")
+        with patch('requests.get', return_value=_cert_response(self.pem)) as mock_get:
+            print("  → Verifying two messages signed by the same certificate")
+            self.assertTrue(verify_bounce_message(self._notification()))
+            self.assertTrue(verify_bounce_message(self._notification(event='Complaint')))
+        print("  → Certificate downloaded once, with a timeout")
+        mock_get.assert_called_once_with(SNS_CERT_URL, timeout=aws_ses_utils.SNS_REQUEST_TIMEOUT)
+
+    def test_certificate_download_failure_rejected(self):
+        """Test a failed certificate download - expects rejection, not an exception"""
+        print("\n⚠ Testing certificate download failures (expecting rejection)")
+        print("  → Download times out")
+        with patch('requests.get', side_effect=requests.Timeout('timed out')):
+            self.assertFalse(verify_bounce_message(self._notification()))
+        print("  → Download returns 404")
+        not_found = Mock(status_code=404, content=b'')
+        with patch('requests.get', return_value=not_found):
+            self.assertFalse(verify_bounce_message(self._notification()))
+        print("  → Failed downloads are not cached")
+        with patch('requests.get', return_value=_cert_response(self.pem)):
+            self.assertTrue(verify_bounce_message(self._notification()))
+        print("  ✓ Download failures handled")
+
+    def test_endpoint_records_only_verified_notifications(self):
+        """Test the bounce endpoint stores verified notifications and drops others"""
+        print("\n✓ Testing bounce endpoint with real signatures")
+        with patch('requests.get', return_value=_cert_response(self.pem)), \
+                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
+            print("  → Signed bounce and complaint from the configured topic")
+            self.assertEqual(self._post(self._notification()).status_code, 200)
+            self.assertEqual(self._post(self._notification(event='Complaint')).status_code, 200)
+            self.assertTrue(BounceRecord.objects.filter(email='bounced@example.com').exists())
+            self.assertTrue(ComplaintRecord.objects.filter(email='complained@example.com').exists())
+
+            print("  → Signed complaint from another topic (200, nothing stored)")
+            BounceRecord.objects.all().delete()
+            ComplaintRecord.objects.all().delete()
+            response = self._post(self._notification(event='Complaint', topic_arn=OTHER_TOPIC_ARN))
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(ComplaintRecord.objects.exists())
+
+            print("  → Tampered bounce (200, nothing stored)")
+            payload = self._notification()
+            payload['Message'] = payload['Message'].replace('bounced@', 'victim@')
+            self.assertEqual(self._post(payload).status_code, 200)
+            self.assertFalse(BounceRecord.objects.exists())
+        print("  → Only verified notifications recorded")
+
+    def test_subscription_confirmation(self):
+        """Test subscriptions are confirmed only for configured topics and SNS URLs"""
+        print("\n⚠ Testing subscription confirmation (expecting unknown topics to be ignored)")
+        with patch('requests.get', return_value=_cert_response(self.pem)) as mock_get, \
+                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
+            print("  → Subscription from another topic is not confirmed")
+            self.assertEqual(self._post(self._subscription(topic_arn=OTHER_TOPIC_ARN)).status_code, 200)
+            self.assertNotIn(SNS_SUBSCRIBE_URL, [c.args[0] for c in mock_get.call_args_list])
+
+            print("  → Subscription from the configured topic is confirmed, with a timeout")
+            self.assertEqual(self._post(self._subscription()).status_code, 200)
+            mock_get.assert_any_call(SNS_SUBSCRIBE_URL, timeout=aws_ses_utils.SNS_REQUEST_TIMEOUT)
+
+        print("  → SubscribeURL off SNS is never requested, even with verification off")
+        evil_url = 'https://evil.example.com/confirm'
+        with patch('requests.get') as mock_get, \
+                patch.object(aws_ses_settings, 'VERIFY_BOUNCE_SIGNATURES', False):
+            self.assertEqual(self._post(self._subscription(subscribe_url=evil_url)).status_code, 200)
+            mock_get.assert_not_called()
+        print("  ✓ Subscription confirmation restricted")
+
+    def test_unsubscribe_confirmation_not_resubscribed(self):
+        """Test an UnsubscribeConfirmation is acknowledged without re-subscribing"""
+        print("\n✓ Testing UnsubscribeConfirmation does not re-subscribe the endpoint")
+        with patch('requests.get', return_value=_cert_response(self.pem)) as mock_get, \
+                patch.object(aws_ses_settings, 'BOUNCE_TOPIC_ARNS', (SNS_TOPIC_ARN,)):
+            print("  → Posting a signed UnsubscribeConfirmation from the configured topic")
+            payload = self._subscription(message_type='UnsubscribeConfirmation')
+            self.assertEqual(self._post(payload).status_code, 200)
+            print("  → Message verified (certificate fetched) but SubscribeURL never requested")
+            mock_get.assert_called_once_with(SNS_CERT_URL, timeout=aws_ses_utils.SNS_REQUEST_TIMEOUT)
+        print("  → Unsubscribe left in place")

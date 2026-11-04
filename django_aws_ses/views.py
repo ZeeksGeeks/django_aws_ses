@@ -170,10 +170,16 @@ def handle_bounce(request):
     if notification_type in ('SubscriptionConfirmation', 'UnsubscribeConfirmation'):
         logger.info(f"Received {notification_type}: TopicArn={notification.get('TopicArn')}")
         subscribe_url = notification.get('SubscribeURL')
-        if subscribe_url:
+        if notification_type == 'UnsubscribeConfirmation':
+            # The SubscribeURL in an UnsubscribeConfirmation re-subscribes the endpoint,
+            # so requesting it would undo the unsubscribe. Only acknowledge it.
+            pass
+        elif subscribe_url and not utils.is_sns_url(subscribe_url):
+            logger.warning(f"Not confirming {notification_type}: SubscribeURL is not an SNS URL")
+        elif subscribe_url:
             try:
                 import requests
-                response = requests.get(subscribe_url)
+                response = requests.get(subscribe_url, timeout=utils.SNS_REQUEST_TIMEOUT)
                 response.raise_for_status()
             except requests.RequestException as e:
                 logger.error(f"Failed to confirm {notification_type}: {e}")
